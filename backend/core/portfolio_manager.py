@@ -1,14 +1,9 @@
 """
-Модуль `portfolio_manager` содержит диспетчер стратегий (портфелей).
+`core.portfolio_manager` – диспетчер портфелей (стратегий).
 
-* Поддерживает одновременный запуск нескольких стратегий.
-* Предоставляет API для добавления, запуска и остановки портфелей.
-* Является асинхронным: стратегии исполняются в виде задач `asyncio`.
-
-> **Важно**: настоящая логика стратегий будет реализована в отдельном модуле
-> `core.strategy`. На момент написания этого файла он может отсутствовать,
-> поэтому предусмотрена заглушка `DummyStrategy`, чтобы файл можно было
-> запускать и тестировать автономно.
+* Хранит запущенные стратегии в памяти.
+* Сохраняет/деактивирует конфигурации в таблице `PortfolioConfig`.
+* Поддерживает фабрику стратегий через `STRATEGY_REGISTRY`.
 """
 
 from __future__ import annotations
@@ -16,181 +11,165 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
+
+from ..db.database import AsyncSessionLocal, ensure_tables_exist
+from ..db.models import PortfolioConfig
+from .strategy import BaseStrategy, PairArbitrageStrategy, StrategyConfig, LegConfig
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Попытка импортировать базовый класс стратегии. Если ещё не создан – заглушка.
-# ---------------------------------------------------------------------------
-try:
-    from core.strategy import BaseStrategy  # type: ignore
-except ImportError:  # pragma: no cover – временно до появления real strategy
-
-    class BaseStrategy:  # pylint: disable=too-few-public-methods
-        """Заглушка, эмулирующая работу стратегии для автономного теста."""
-
-        def __init__(self, config: dict[str, Any]):
-            self.config = config
-            self._running = False
-            self._task: Optional[asyncio.Task] = None
-
-        async def _loop(self) -> None:
-            """Имитация торгового цикла: выводим сообщение раз в секунду."""
-            while self._running:
-                logger.info("[DummyStrategy] work… (config=%s)", self.config)
-                await asyncio.sleep(1)
-
-        async def start(self) -> None:
-            """Запуск стратегии."""
-            if self._running:
-                return
-            self._running = True
-            self._task = asyncio.create_task(self._loop())
-
-        async def stop(self) -> None:
-            """Остановка стратегии."""
-            self._running = False
-            if self._task:
-                await self._task
-
-        @property
-        def is_running(self) -> bool:  # noqa: D401
-            """Возвращает `True`, если стратегия запущена."""
-            return self._running
-
-
-# ---------------------------------------------------------------------------
-# Внутренняя структура для хранения данных о запущенном портфеле
+# Реестр доступных стратегий
 # ---------------------------------------------------------------------------
 
-@dataclass
+STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
+    "pair": PairArbitrageStrategy,
+    # "triangular": TriangularArbStrategy,  # задел на будущее
+}
+
+# ---------------------------------------------------------------------------
+# Вспомогательная структура – хранит задачу и стратегию
+# ---------------------------------------------------------------------------
+
 class _PortfolioRecord:
-    """Вспомогательная структура – хранит стратегию и связанную с ней задачу."""
+    def __init__(self, strategy: BaseStrategy, task: asyncio.Task, config: dict[str, Any]):
+        self.strategy = strategy
+        self.task = task
+        self.config = config
 
-    strategy: BaseStrategy
-    task: asyncio.Task
-    config: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Класс PortfolioManager
-# ---------------------------------------------------------------------------
 
 class PortfolioManager:
-    """Диспетчер, управляющий жизненным циклом стратегий."""
+    """Управляет жизненным циклом стратегий (портфелей)."""
 
     def __init__(self) -> None:
+        # Гарантируем создание таблиц один раз при первом запуске
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # Если уже есть цикл – выполняем init_db в нём
+                loop.create_task(ensure_tables_exist())
+            else:
+                loop.run_until_complete(ensure_tables_exist())
+        except RuntimeError:
+            # Нет активного цикла – создаём временный
+            asyncio.run(ensure_tables_exist())
+
         self._portfolios: Dict[str, _PortfolioRecord] = {}
         self._lock = asyncio.Lock()
         self._running = False
 
-    # ---------------------------- Публичный API ----------------------------
+    # ------------------------------------------------------------------
+    # Внутреннее: построение стратегии
+    # ------------------------------------------------------------------
+
+    def _build_strategy(self, cfg: dict[str, Any]) -> BaseStrategy:
+        stype = cfg.get("type")
+        if stype not in STRATEGY_REGISTRY:
+            raise ValueError(f"Неизвестный тип стратегии: {stype}")
+        cls = STRATEGY_REGISTRY[stype]
+
+        if stype == "pair":
+            s_cfg = StrategyConfig(
+                name=cfg.get("name", f"Pair-{uuid.uuid4().hex[:4]}"),
+                leg1=LegConfig(**cfg["leg1"]),
+                leg2=LegConfig(**cfg["leg2"]),
+                entry_levels=cfg.get("entry_levels", [0.5]),
+                exit_level=cfg.get("exit_level", 0.1),
+                poll_interval=cfg.get("poll_interval", 0.5),
+            )
+            return cls(s_cfg)  # type: ignore[arg-type]
+
+        # fallback: передаём raw‑dict, если стратегия умеет разбирать сама
+        return cls(cfg)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Публичный API
+    # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Вызывается при старте приложения FastAPI."""
-        logger.info("PortfolioManager: старт.")
         self._running = True
-        # (опционально) здесь можно загружать конфигурации из БД и автозапускать
-        # сохранённые портфели. Пока пропускаем.
+        logger.info("PortfolioManager started")
 
     async def stop(self) -> None:
-        """Останавливает все запущенные портфели и завершает работу менеджера."""
-        logger.info("PortfolioManager: остановка …")
         async with self._lock:
-            # Останавливаем стратегии
-            for pid, record in list(self._portfolios.items()):
+            for pid in list(self._portfolios):
                 await self._stop_portfolio_nolock(pid)
         self._running = False
-        logger.info("PortfolioManager: остановлен.")
+        logger.info("PortfolioManager stopped")
 
     async def add_portfolio(self, config: dict[str, Any]) -> str:
-        """Создать и запустить новый портфольный робот.
-
-        :param config: конфигурация стратегии (формат будет уточнён позже)
-        :return: идентификатор портфеля
-        """
         async with self._lock:
             pid = str(uuid.uuid4())
-            strategy = BaseStrategy(config)
-            task = asyncio.create_task(strategy.start())  # type: ignore[arg-type]
-            self._portfolios[pid] = _PortfolioRecord(
-                strategy=strategy, task=task, config=config
-            )
-            logger.info("Portfolio %s добавлен и запущен.", pid)
+            strategy = self._build_strategy(config)
+            task = asyncio.create_task(strategy.start())
+            self._portfolios[pid] = _PortfolioRecord(strategy, task, config)
+            logger.info("Portfolio %s of type %s started", pid, config.get("type"))
+            await self._save_config(pid, config)
             return pid
 
     async def stop_portfolio(self, pid: str) -> None:
-        """Остановить запущенный портфель по идентификатору."""
         async with self._lock:
             await self._stop_portfolio_nolock(pid)
 
     async def list_portfolios(self) -> Dict[str, dict[str, Any]]:
-        """Вернуть краткое состояние всех портфелей."""
         async with self._lock:
-            summary: Dict[str, dict[str, Any]] = {}
-            for pid, rec in self._portfolios.items():
-                summary[pid] = {
-                    "running": rec.strategy.is_running,
-                    "config": rec.config,
-                }
-            return summary
+            return {
+                pid: {"running": rec.strategy.is_running, "config": rec.config}
+                for pid, rec in self._portfolios.items()
+            }
 
-    # ----------------------- Внутренние вспомогательные --------------------
+    # ------------------------------------------------------------------
+    # Внутренние методы
+    # ------------------------------------------------------------------
 
     async def _stop_portfolio_nolock(self, pid: str) -> None:
-        """Вспомогательный метод: остановка без захвата внешнего lock."""
-        record = self._portfolios.get(pid)
-        if not record:
-            logger.warning("Портфеля %s не существует.", pid)
+        rec = self._portfolios.get(pid)
+        if not rec:
+            logger.warning("Portfolio %s not found", pid)
             return
-        await record.strategy.stop()
-        # Дожидаемся завершения фоновой задачи, если она ещё крутится
-        if not record.task.done():
-            await record.task
+        await rec.strategy.stop()
+        if not rec.task.done():
+            await rec.task
         del self._portfolios[pid]
-        logger.info("Портфель %s остановлен и удалён.", pid)
+        logger.info("Portfolio %s stopped", pid)
+        await self._deactivate_config(pid)
+
+    async def _save_config(self, pid: str, cfg: dict[str, Any]) -> None:
+        async with AsyncSessionLocal() as ses:
+            ses.add(PortfolioConfig(pid=pid, name=cfg.get("name", pid), config_json=cfg))
+            await ses.commit()
+
+    async def _deactivate_config(self, pid: str) -> None:
+        async with AsyncSessionLocal() as ses:
+            row = await ses.get(PortfolioConfig, {"pid": pid})
+            if row:
+                row.active = False  # type: ignore[attr-defined]
+                await ses.commit()
 
 
 # ---------------------------------------------------------------------------
-# Тестирование модуля (запуск через `python core/portfolio_manager.py`)
+# Демонстрация
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    """Небольшой тест: создаём менеджер, запускаем два заглушечных портфеля."""
-
     import sys
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     async def _demo() -> None:
-        manager = PortfolioManager()
-        await manager.start()
+        mgr = PortfolioManager()
+        await mgr.start()
+        pid = await mgr.add_portfolio(
+            {
+                "type": "pair",
+                "name": "DemoPair",
+                "leg1": {"ticker": "A", "price_ratio": 1, "qty_ratio": 1},
+                "leg2": {"ticker": "B", "price_ratio": 1, "qty_ratio": 1},
+            }
+        )
+        await asyncio.sleep(3)
+        await mgr.stop_portfolio(pid)
+        await mgr.stop()
 
-        # Добавляем два портфеля с разной конфигурацией
-        pid1 = await manager.add_portfolio({"name": "Demo‑1", "legs": 2})
-        pid2 = await manager.add_portfolio({"name": "Demo‑2", "legs": 3})
-
-        # Работаем 5 секунд, смотрим логи
-        await asyncio.sleep(5)
-
-        # Выводим текущее состояние портфелей
-        summary = await manager.list_portfolios()
-        print("\nСостояние портфелей:")
-        for pid, info in summary.items():
-            print(f"{pid}: running={info['running']} config={info['config']}")
-
-        # Останавливаем оба портфеля и менеджер
-        await manager.stop_portfolio(pid1)
-        await manager.stop_portfolio(pid2)
-        await manager.stop()
-
-    # Запуск демо‑корутины
     asyncio.run(_demo())
-
-    # Для простоты завершаем процесс (если вдруг не все задачи остановились)
     sys.exit(0)
