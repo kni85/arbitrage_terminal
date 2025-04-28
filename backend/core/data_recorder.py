@@ -25,9 +25,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from core.quik_connector import QuikConnector
-from db.database import AsyncSessionLocal
-from db.models import Quote
+from .quik_connector import QuikConnector
+from ..db.database import AsyncSessionLocal
+from ..db.models import Quote
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,8 @@ class DataRecorder:
             await self._task
         for class_code, sec_code in self.instruments:
             self._connector.unsubscribe_quotes(class_code, sec_code, self._update_quote)
+        # Закрываем QuikConnector, чтобы фоновые потоки завершились
+        self._connector.close()
         logger.info("DataRecorder stopped")
 
     # ------------------------------------------------------------------
@@ -94,7 +96,7 @@ class DataRecorder:
         async with AsyncSessionLocal() as session:
             for (class_code, sec_code), q in list(self._latest.items()):
                 quote = Quote(
-                    timestamp=datetime.utcfromtimestamp(q["time"]).replace(tzinfo=timezone.utc),
+                    timestamp=datetime.fromtimestamp(q["time"], tz=timezone.utc),
                     instrument=f"{class_code}.{sec_code}",
                     bid=q["bid"],
                     ask=q["ask"],
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     async def _demo() -> None:
         # Создаём in-memory SQLite; перезаписываем фабрику сессий на лету
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from db.database import Base
+        from ..db.database import Base
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
         global AsyncSessionLocal  # noqa: PLW0603 – переопределяем для демо
