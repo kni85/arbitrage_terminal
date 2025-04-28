@@ -1,26 +1,16 @@
 """
-`core.quik_connector` – тонкая асинхронная обёртка над библиотекой **QuikPy**.
+`core.quik_connector` – асинхронная обёртка (singleton) над библиотекой **QuikPy**.
 
-Цель: предоставить единый интерфейс для стратегий и менеджеров, скрывающий
-детали работы с API терминала QUIK. Реальная торговля и подписки будут
-осуществляться через QuikPy, но чтобы можно было запускать проект без
-установленного QUIK, в модуле предусмотрена **заглушка `DummyQuikPy`**.
+* Подписки на стакан L2, очередь событий для стратегий.
+* Методы выставления/отмены заявок (лимит, маркет).
+* Работает даже без установленного QUIK – через `DummyQuikPy`.
 
-Основные возможности `QuikConnector`:
-* подключение к QuikPy и контроль соединения;
-* подписка на поток котировок (best bid/ask) с доставкой через callback;
-* выставление лимитных и рыночных ордеров;
-* отмена ордеров; (заглушка – лишь логирует вызов)
-* единичный (singleton) доступ – стратегий много, соединение одно.
+### Главное изменение
 
-> **Внимание**: QuikPy работает синхронно (блокирующие вызовы через sockets).
-> Варианты интеграции:
-> 1. Оставить вызовы в потоках `ThreadPoolExecutor` (для не‐блокировки event‐loop).
-> 2. Воспользоваться примером MultiScripts из репозитория QuikPy – он тоже
->    запускает отдельные python-скрипты, каждый общается с QUIK.
->
-> Для MVP достаточно варианта 1 – каждый запрос к QuikPy исполняем в pool,
-> подписки – в отдельном потоке, перекидываем события в asyncio.Queue.
+Фикс `RuntimeError: There is no current event loop in thread ...`.
+Теперь при первой асинхронной операции (``await connector.events()``)
+коннектор запоминает текущий "главный" event‑loop и использует его для
+выполнения корутинных callback‑ов из фонового потока приёма котировок.
 """
 
 from __future__ import annotations
@@ -81,7 +71,7 @@ class QuikConnector:
     """Singleton для доступа к QuikPy в асинхронном коде."""
 
     _instance: Optional["QuikConnector"] = None
-    _lock = threading.Lock()  # для потокобезопасного singleton
+    _lock = threading.Lock()
 
     # ------------------------ Factory / Singleton --------------------------
 
@@ -91,35 +81,42 @@ class QuikConnector:
                 cls._instance = super().__new__(cls)
         return cls._instance
 
+    # ------------------------------------------------------------------
+    # Инициализация
+    # ------------------------------------------------------------------
+
     def __init__(self, host: str | None = None, port: int = 34130):
-        if hasattr(self, "_initialized") and self._initialized:
-            return  # уже инициализировано
+        if getattr(self, "_initialized", False):
+            return
         self._initialized = True
 
+        # QuikPy подключение (или Dummy)
         self._qp = QuikPy(host=host, port=port)
+
+        # Коллбеки, подписанные на инструмент: key -> list(callback)
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
 
-        # Очередь для передачи событий в asyncio‑мир
-        self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue()
+        # Очередь событий котировок -> asyncio‑мир
+        self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
 
-        # Поток, слушающий костыльно прибывающие данные (эмуляция)
+        # Ссылка на "главный" event‑loop (присвоим при первом `await events()`)
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+        # Фоновый поток, имитирующий приём котировок (или слушающий QuikPy)
         self._quote_listener_thread = threading.Thread(
-            target=self._quote_listener_loop, daemon=True
+            target=self._quote_listener_loop, name="QP‑quotes", daemon=True
         )
         self._quote_listener_thread.start()
 
         logger.info("QuikConnector initialised (host=%s, port=%s)", host, port)
 
     # ------------------------------------------------------------------
-    # Подписки на стакан (Level2). Реальный QUIK вызывает функцию Lua
-    # callback OnQuote() – библиотека QuikPy транслирует в python.
-    # Здесь мы подписываем callback и дальше кладём событие в очередь.
+    # Подписки на стакан L2
     # ------------------------------------------------------------------
 
     def subscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None:
         key = f"{class_code}.{sec_code}"
         self._quote_callbacks.setdefault(key, []).append(cb)
-        # Вызываем системную подписку один раз на key
         if len(self._quote_callbacks[key]) == 1:
             self._qp.Subscribe_Level_II_Quotes(class_code, sec_code)
             logger.info("Subscribed L2 %s", key)
@@ -129,25 +126,30 @@ class QuikConnector:
         cbs = self._quote_callbacks.get(key)
         if not cbs:
             return
-        cbs.remove(cb)
+        if cb in cbs:
+            cbs.remove(cb)
         if not cbs:
-            # Больше нет слушателей – отменяем подписку
             self._qp.Unsubscribe_Level_II_Quotes(class_code, sec_code)
             del self._quote_callbacks[key]
             logger.info("Unsubscribed L2 %s", key)
 
     # ------------------------------------------------------------------
-    # Асинхронные события – стратегии могут `await connector.events()` и
-    # получать котировки без блокировки.
+    # Асинхронный интерфейс для получения потока событий
     # ------------------------------------------------------------------
 
     async def events(self) -> asyncio.Queue:  # noqa: D401
+        """Возвращает очередь событий котировок.
+
+        При первом вызове запоминаем текущий event‑loop как "главный", чтобы
+        из фонового потока публиковать coroutine‑callback-и без ошибки.
+        """
+        if self._main_loop is None:
+            self._main_loop = asyncio.get_running_loop()
+            logger.debug("QuikConnector: registered main event loop %s", self._main_loop)
         return self._event_queue
 
     # ------------------------------------------------------------------
-    # Торговые операции (упрощённо). Реальный QUIK требует заполнения формы
-    # транзакции. Ниже приведены примеры транзакций для лимитного и рыночного
-    # ордера. Возвращается ответ QuikPy.
+    # Торговые операции (упрощённые)
     # ------------------------------------------------------------------
 
     async def place_limit_order(
@@ -155,7 +157,7 @@ class QuikConnector:
         class_code: str,
         sec_code: str,
         account: str,
-        action: str,  # BUY / SELL
+        action: str,
         price: float,
         quantity: int,
     ) -> dict[str, Any]:
@@ -179,14 +181,13 @@ class QuikConnector:
         action: str,
         quantity: int,
     ) -> dict[str, Any]:
-        # В QUIK рыночный ордер – лимитный с ценой 0 или маркет-кодом «MP»
         tr = {
             "CLASSCODE": class_code,
             "SECCODE": sec_code,
             "ACTION": "NEW_ORDER",
             "ACCOUNT": account,
             "OPERATION": action.upper(),
-            "PRICE": 0,  # рыночная
+            "PRICE": 0,
             "QUANTITY": quantity,
         }
         loop = asyncio.get_running_loop()
@@ -198,12 +199,10 @@ class QuikConnector:
         return await loop.run_in_executor(None, self._qp.SendTransaction, tr)
 
     # ------------------------------------------------------------------
-    # Внутренний: слушаем поток (эмуляция) и диспатчим слушателям.
-    # В реальности QuikPy вызывает callback, здесь – просто демонстрация.
+    # Внутренний поток: слушает QuikPy / эмулирует и диспатчит события
     # ------------------------------------------------------------------
 
     def _quote_listener_loop(self) -> None:
-        """Симуляция поступления котировки каждые 0.5 сек."""
         import random
         import time
 
@@ -217,24 +216,28 @@ class QuikConnector:
                     "ask": round(random.uniform(100, 110), 2),
                     "time": time.time(),
                 }
-                # Кладём событие в очередь asyncio
+                # Ставим в очередь (если не переполнена)
                 try:
                     self._event_queue.put_nowait(quote)
-                except asyncio.QueueFull:  # pragma: no cover
+                except asyncio.QueueFull:
                     logger.warning("Event queue full – dropping quote")
+
+                # Рассылаем в callbacks
                 for cb in callbacks:
                     try:
                         if asyncio.iscoroutinefunction(cb):
-                            # если callback – coroutine, исполняем его в event‑loop
-                            asyncio.run_coroutine_threadsafe(cb(quote), asyncio.get_event_loop())
+                            if self._main_loop is None:
+                                logger.debug("Coroutine callback %s пропущен – loop неизвестен", cb)
+                                continue
+                            asyncio.run_coroutine_threadsafe(cb(quote), self._main_loop)
                         else:
                             cb(quote)
-                    except Exception as exc:  # pragma: no cover, pylint: disable=broad-except
+                    except Exception as exc:  # pragma: no cover
                         logger.exception("Callback error: %s", exc)
             time.sleep(0.5)
 
     # ------------------------------------------------------------------
-    # Завершение работы
+    # Завершение
     # ------------------------------------------------------------------
 
     def close(self) -> None:
@@ -243,7 +246,7 @@ class QuikConnector:
 
 
 # ---------------------------------------------------------------------------
-# Демонстрационный запуск
+# Демонстрация
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -254,22 +257,27 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    q = QuikConnector()
+    connector = QuikConnector()
 
-    # Подписываемся и выводим 3 события из очереди
     async def _demo() -> None:
-        async def _print_cb(data: dict[str, Any]) -> None:  # noqa: D401
-            print("Callback: ", data)
+        async def async_cb(q: dict[str, Any]) -> None:  # noqa: D401
+            print("async CB:", q)
 
-        q.subscribe_quotes("TQBR", "SBER", _print_cb)
+        def sync_cb(q: dict[str, Any]) -> None:  # noqa: D401
+            print("sync CB:", q)
 
-        ev_q = await q.events()
+        connector.subscribe_quotes("TQBR", "SBER", async_cb)
+        connector.subscribe_quotes("TQBR", "SBER", sync_cb)
+
+        evq = await connector.events()
+        # Выводим 3 события из очереди
         for _ in range(3):
-            evt = await ev_q.get()
-            print("Async queue: ", evt)
+            evt = await evq.get()
+            print("queue EVT:", evt)
 
-        q.unsubscribe_quotes("TQBR", "SBER", _print_cb)
-        q.close()
+        connector.unsubscribe_quotes("TQBR", "SBER", async_cb)
+        connector.unsubscribe_quotes("TQBR", "SBER", sync_cb)
+        connector.close()
 
     asyncio.run(_demo())
     sys.exit(0)
