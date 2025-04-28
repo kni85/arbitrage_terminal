@@ -224,7 +224,11 @@ class QuikConnector:
                     logger.warning("Event queue full – dropping quote")
                 for cb in callbacks:
                     try:
-                        cb(quote)
+                        if asyncio.iscoroutinefunction(cb):
+                            # если callback – coroutine, исполняем его в event‑loop
+                            asyncio.run_coroutine_threadsafe(cb(quote), asyncio.get_event_loop())
+                        else:
+                            cb(quote)
                     except Exception as exc:  # pragma: no cover, pylint: disable=broad-except
                         logger.exception("Callback error: %s", exc)
             time.sleep(0.5)
