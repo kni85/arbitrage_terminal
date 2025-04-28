@@ -12,6 +12,7 @@ import asyncio
 import logging
 import uuid
 from typing import Any, Dict, Optional, Type
+from sqlalchemy import select
 
 from ..db.database import AsyncSessionLocal, ensure_tables_exist
 from ..db.models import PortfolioConfig
@@ -99,6 +100,9 @@ class PortfolioManager:
         logger.info("PortfolioManager stopped")
 
     async def add_portfolio(self, config: dict[str, Any]) -> str:
+        # гарантируем, что таблицы физически созданы к моменту вставки
+        await ensure_tables_exist()
+
         async with self._lock:
             pid = str(uuid.uuid4())
             strategy = self._build_strategy(config)
@@ -142,7 +146,9 @@ class PortfolioManager:
 
     async def _deactivate_config(self, pid: str) -> None:
         async with AsyncSessionLocal() as ses:
-            row = await ses.get(PortfolioConfig, {"pid": pid})
+            stmt = select(PortfolioConfig).where(PortfolioConfig.pid == pid)
+            result = await ses.execute(stmt)
+            row = result.scalar_one_or_none()
             if row:
                 row.active = False  # type: ignore[attr-defined]
                 await ses.commit()

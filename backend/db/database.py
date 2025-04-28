@@ -81,10 +81,11 @@ async def close_db() -> None:
 # ---------------------------------------------------------------------------
 
 _tables_created = False
+_init_lock = asyncio.Lock()          # <-- добавляем общий замок
 
 
 async def ensure_tables_exist() -> None:
-    """Гарантирует вызов `init_db()` ровно один раз во всём приложении."""
+    """Idempotent-функция: один раз создаёт таблицы во всём приложении."""
 
     global _tables_created  # noqa: PLW0603
     if _tables_created:
