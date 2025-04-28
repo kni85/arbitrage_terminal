@@ -1,15 +1,16 @@
 """
-`api.server` – определяет REST‑эндпоинты FastAPI для управления портфелями.
+`api.server` – REST‑эндпоинты FastAPI для управления портфелями.
 
 Поддерживаемые маршруты:
 
 * **GET  /api/portfolios**                – список всех портфелей.
-* **POST /api/portfolios**                – создать и запустить новый портфель.
-* **GET  /api/portfolios/{pid}**          – подробная информация о портфеле.
-* **POST /api/portfolios/{pid}/stop**     – остановить и удалить портфель.
+* **POST /api/portfolios**                – создать и запустить портфель.
+* **GET  /api/portfolios/{pid}**          – подробная информация.
+* **POST /api/portfolios/{pid}/stop**     – остановить и удалить портфель
+  (ответ 204 No Content).
 
-Все операции опираются на экземпляр `PortfolioManager`, который хранится в
-`app.state.portfolio_manager` (см. `backend.main`).
+Экземпляр `PortfolioManager` хранится в `app.state.portfolio_manager` и
+передаётся через зависимость `get_pm()`.
 """
 
 from __future__ import annotations
@@ -17,11 +18,19 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
-# Попытка импортировать настоящие классы. Если их нет – заглушки для тестов.
+# Попытка импортировать настоящий PortfolioManager. Если нет – заглушка.
 # ---------------------------------------------------------------------------
 try:
     from core.portfolio_manager import PortfolioManager
@@ -38,31 +47,34 @@ except ImportError as exc:  # pragma: no cover – до появления real 
         async def stop_portfolio(self, pid: str) -> None:  # noqa: D401
             pass
 
-
 # ---------------------------------------------------------------------------
-# Pydantic‑модели
+# Pydantic‑модели входа/выхода
 # ---------------------------------------------------------------------------
 
 class PortfolioConfig(BaseModel):
-    """Входная конфигурация портфеля (произвольная структура)."""
+    """Конфигурация портфеля (поля свободные, минимум `name`)."""
 
-    name: str = Field(..., description="Произвольное имя портфеля")
+    name: str = Field(..., description="Имя портфеля в интерфейсе")
 
     class Config:
-        extra = "allow"  # разрешаем произвольные поля (legs, ratios, levels и т.д.)
+        extra = "allow"  # разрешаем любые доп. поля: legs, ratios, levels …
 
 
 class PortfolioCreateResponse(BaseModel):
-    pid: str = Field(..., description="Идентификатор созданного портфеля")
+    """Ответ при создании портфеля."""
+
+    pid: str = Field(..., description="Идентификатор портфеля")
 
 
 class PortfolioSummary(BaseModel):
+    """Сводка по портфелю в списке."""
+
     running: bool
     config: Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
-# Зависимость для получения PortfolioManager из объекта приложения
+# Зависимость – достаём менеджер из state приложения
 # ---------------------------------------------------------------------------
 
 def get_pm(request: Request) -> PortfolioManager:  # noqa: D401
@@ -73,7 +85,7 @@ def get_pm(request: Request) -> PortfolioManager:  # noqa: D401
 
 
 # ---------------------------------------------------------------------------
-# APIRouter – регистрируется в приложении в backend.main
+# Основной роутер
 # ---------------------------------------------------------------------------
 
 api_router = APIRouter(prefix="/portfolios", tags=["portfolios"])
@@ -81,7 +93,7 @@ api_router = APIRouter(prefix="/portfolios", tags=["portfolios"])
 
 @api_router.get("/", response_model=Dict[str, PortfolioSummary])
 async def list_portfolios(manager: PortfolioManager = Depends(get_pm)) -> Any:  # noqa: D401
-    """Список всех портфелей и их краткое состояние."""
+    """Список портфелей."""
     return await manager.list_portfolios()
 
 
@@ -90,7 +102,7 @@ async def create_portfolio(
     config: PortfolioConfig,
     manager: PortfolioManager = Depends(get_pm),
 ) -> Any:  # noqa: D401
-    """Создать и запустить портфель. Возвращает его идентификатор."""
+    """Создать и запустить новый портфель."""
     pid = await manager.add_portfolio(config.dict())
     return PortfolioCreateResponse(pid=pid)
 
@@ -100,37 +112,32 @@ async def get_portfolio(
     pid: str,
     manager: PortfolioManager = Depends(get_pm),
 ) -> Any:  # noqa: D401
-    """Получить подробную информацию о портфеле."""
+    """Детали конкретного портфеля."""
     summary = await manager.list_portfolios()
     if pid not in summary:
         raise HTTPException(status_code=404, detail="Портфель не найден")
     return summary[pid]
 
 
-@api_router.post("/{pid}/stop", status_code=status.HTTP_204_NO_CONTENT)
+@api_router.post(
+    "/{pid}/stop",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def stop_portfolio(
     pid: str,
     manager: PortfolioManager = Depends(get_pm),
-) -> None:  # noqa: D401
-    """Остановить и удалить портфель."""
+) -> Response:  # noqa: D401
+    """Остановить и удалить портфель. Ответ 204 без тела."""
     await manager.stop_portfolio(pid)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
-# Тестирование модуля локально – создаём мини‑приложение и запускаем Uvicorn
+# Локальный тест: `python api/server.py`
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    """Запускает небольшой FastAPI‑сервер только с единственным роутером.
-
-    Можно протестировать:
-
-    ```bash
-    curl -X POST http://127.0.0.1:8001/portfolios -H "Content-Type: application/json" \
-         -d '{"name": "Test", "legs": 2}'
-    ```
-    """
-
     import uvicorn
 
     logging.basicConfig(
@@ -141,6 +148,6 @@ if __name__ == "__main__":
     app = FastAPI(title="API test")
     pm = PortfolioManager()
     app.state.portfolio_manager = pm  # type: ignore[attr-defined]
-    app.include_router(api_router, prefix="/")
+    app.include_router(api_router)  # без лишнего префикса
 
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
