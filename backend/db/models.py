@@ -30,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db.database import Base
+from .database import Base
 
 # ---------------------------------------------------------------------------
 # Таблица инструментов
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy import select
 
-    from db.database import Base
+    from .database import Base
 
     async def _demo() -> None:
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
