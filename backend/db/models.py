@@ -1,139 +1,168 @@
 """
-`db.models` – ORM‑модели проекта для SQLAlchemy.
+ORM-схема проекта.
 
-Содержит базовые сущности:
-* **Instrument** – справочник инструментов (тикер, биржа, точность цены).
-* **PortfolioConfig** – таблица конфигураций портфелей в JSON‑виде.
-* **Quote** – история котировок (bid/ask) раз в секунду.
-
-> **Важно**: все модели наследуются от `Base`, экспортированного в
-> `db.database`. При первом импорте `db.models` файл должен быть доступен,
-> иначе `db.database.init_db()` не создаст таблицы.
+•   PK/FK/индексы → исключаем размножение дублей и ускоряем джоины
+•   __repr__      → удобнее читать логи / отладку
 """
 
 from __future__ import annotations
 
-import json
+import uuid
 from datetime import datetime
-from typing import Any, Dict
+from enum import StrEnum
 
 from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
+    Column, Integer, String, DateTime, Boolean, ForeignKey, Numeric, Enum,
+    UniqueConstraint, Index
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.sqlite import JSON  # заменится на JSONB/JSON для PostgreSQL
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
-# ---------------------------------------------------------------------------
-# Таблица инструментов
-# ---------------------------------------------------------------------------
+
+# -- справочники -------------------------------------------------------------
 
 class Instrument(Base):
-    """Справочник торговых инструментов."""
-
     __tablename__ = "instruments"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    ticker: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    board: Mapped[str] = mapped_column(String(16), default="")
-    lot_size: Mapped[int] = mapped_column(Integer, default=1)
-    price_precision: Mapped[int] = mapped_column(Integer, default=2)
+    id: Mapped[int]         = mapped_column(primary_key=True, autoincrement=True)
+    ticker: Mapped[str]     = mapped_column(String(32), unique=True, nullable=False)
+    board:  Mapped[str]     = mapped_column(String(16), nullable=False)
+    lot_size: Mapped[int]   = mapped_column(Integer, nullable=False)
+    price_precision: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    def __repr__(self) -> str:  # noqa: D401
-        return f"<Instrument {self.ticker} ({self.board})>"
+    quotes = relationship("Quote", back_populates="instrument", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<Instr {self.ticker} ({self.board})>"
 
 
-# ---------------------------------------------------------------------------
-# Таблица конфигураций портфелей
-# ---------------------------------------------------------------------------
+# -- поток котировок ---------------------------------------------------------
+
+class Quote(Base):
+    """
+    1-секундный снэпшот best bid/ask.
+    """
+    __tablename__ = "quotes"
+    __table_args__ = (
+        Index("ix_quotes_inst_ts", "instrument_id", "ts"),
+    )
+
+    id: Mapped[int]           = mapped_column(primary_key=True, autoincrement=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+    ts: Mapped[datetime]      = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    bid: Mapped[float]        = mapped_column(Numeric(18, 6))
+    bid_qty: Mapped[int]      = mapped_column(Integer)
+    ask: Mapped[float]        = mapped_column(Numeric(18, 6))
+    ask_qty: Mapped[int]      = mapped_column(Integer)
+
+    instrument = relationship("Instrument", back_populates="quotes")
+
+    def __repr__(self) -> str:
+        return f"<Quote {self.instrument.ticker} {self.ts:%H:%M:%S} bid={self.bid} ask={self.ask}>"
+
+
+# -- портфели / стратегии ----------------------------------------------------
 
 class PortfolioConfig(Base):
-    """Хранит JSON‑конфигурацию портфеля (legs, ratios, уровни …)."""
-
+    """
+    Храним «паспорт» стратегии (как она была сконфигурирована).
+    • `pid` — публичный UUID (используется в API/фронте)
+    • `id`   — суррогатный PK, не светится наружу
+    """
     __tablename__ = "portfolio_configs"
+    __table_args__ = (
+        UniqueConstraint("pid", name="uq_portfolio_pid"),
+        Index("ix_portfolio_active", "active"),
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(128))
-    config_json: Mapped[Dict[str, Any]] = mapped_column(JSON)  # хранит сырой dict
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    pid: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid.uuid4()), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    config_json = Column(JSON, nullable=False)            # raw-конфиг (legs, ratios…)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    def __repr__(self) -> str:  # noqa: D401
-        return f"<PortfolioConfig {self.pid} ({self.name})>"
+    positions = relationship("PortfolioPosition", back_populates="portfolio",
+                             cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="portfolio",
+                          cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<Portfolio {self.name} pid={self.pid} active={self.active}>"
 
 
-# ---------------------------------------------------------------------------
-# История котировок (bid/ask)
-# ---------------------------------------------------------------------------
 
-class Quote(Base):
-    """Запись котировки `bid` / `ask` инструмента на момент времени."""
+class Side(StrEnum):
+    LONG  = "LONG"
+    SHORT = "SHORT"
 
-    __tablename__ = "quotes"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
-    instrument: Mapped[str] = mapped_column(String(32), index=True)
-    bid: Mapped[float] = mapped_column(Float)
-    ask: Mapped[float] = mapped_column(Float)
-
+class PortfolioPosition(Base):
+    """
+    Актуальные позиции портфеля по каждому инструменту.
+    """
+    __tablename__ = "portfolio_positions"
     __table_args__ = (
-        UniqueConstraint("timestamp", "instrument", name="uq_quote_time_instr"),
+        UniqueConstraint("portfolio_id", "instrument_id",
+                         name="uq_position_portfolio_instrument"),
     )
 
-    def __repr__(self) -> str:  # noqa: D401
-        return f"<Quote {self.instrument} {self.timestamp} bid={self.bid} ask={self.ask}>"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio_configs.id"), nullable=False)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+
+    side: Mapped[Side] = mapped_column(Enum(Side), nullable=False)
+    qty:  Mapped[int]  = mapped_column(Integer, nullable=False)
+    avg_price: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+
+    portfolio = relationship("PortfolioConfig", back_populates="positions")
+    instrument = relationship("Instrument")
+
+    def __repr__(self) -> str:
+        return f"<Pos {self.portfolio.name}:{self.instrument.ticker} {self.side} {self.qty}>"
 
 
-# ---------------------------------------------------------------------------
-# Простой тест‑скрипт: создаём in‑memory базу, таблицы, пару записей
-# ---------------------------------------------------------------------------
+# -- ордера / сделки ---------------------------------------------------------
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
+class OrderStatus(StrEnum):
+    NEW       = "NEW"
+    ACTIVE    = "ACTIVE"
+    PARTIAL   = "PARTIAL"
+    FILLED    = "FILLED"
+    CANCELLED = "CANCELLED"
+    REJECTED  = "REJECTED"
 
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from sqlalchemy import select
 
-    from .database import Base
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        Index("ix_orders_portfolio_status", "portfolio_id", "status"),
+    )
 
-    async def _demo() -> None:
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)      # внутренний id
+    quik_num: Mapped[int | None] = mapped_column(Integer)                      # № заявки в QUIK
 
-        Session = async_sessionmaker(bind=engine, expire_on_commit=False)
+    portfolio_id:  Mapped[int]  = mapped_column(ForeignKey("portfolio_configs.id"), nullable=False)
+    instrument_id: Mapped[int]  = mapped_column(ForeignKey("instruments.id"), nullable=False)
 
-        # Добавляем инструмент и котировку
-        async with Session() as ses:
-            ses.add(Instrument(ticker="EURUSD", board="FORTS", lot_size=1, price_precision=4))
-            ses.add(
-                Quote(
-                    timestamp=datetime.utcnow(),
-                    instrument="EURUSD",
-                    bid=1.1234,
-                    ask=1.1236,
-                )
-            )
-            await ses.commit()
+    side:    Mapped[Side]        = mapped_column(Enum(Side), nullable=False)
+    price:   Mapped[float]       = mapped_column(Numeric(18, 6), nullable=False)
+    qty:     Mapped[int]         = mapped_column(Integer, nullable=False)
+    filled:  Mapped[int]         = mapped_column(Integer, default=0)
 
-        # Выводим содержимое таблицы quotes
-        async with Session() as ses:
-            rows = (await ses.execute(select(Quote))).scalars().all()
-            for row in rows:
-                print(row)
+    status:  Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.NEW)
 
-        await engine.dispose()
+    created_at:  Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at:  Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    asyncio.run(_demo())
-    sys.exit(0)
+    portfolio = relationship("PortfolioConfig", back_populates="orders")
+    instrument = relationship("Instrument")
+
+    def __repr__(self) -> str:
+        return (f"<Order {self.id}/{self.quik_num} {self.instrument.ticker} "
+                f"{self.side} {self.qty}@{self.price} {self.status}>")
