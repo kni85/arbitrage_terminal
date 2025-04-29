@@ -63,7 +63,8 @@ async def init_db() -> None:
         logger.warning("Модуль backend.db.models не найден — создаётся пустая схема.")
 
     async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # важное: checkfirst=True, иначе попытка создать уже существующую таблицу упадёт
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
     logger.info("[db] Таблицы готовы.")
 
