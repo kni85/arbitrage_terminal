@@ -1,3 +1,19 @@
+# tests/unit/db_models_import_test.py
+
+import os
+import sys
+
+# ГАРАНТИРУЕМ, ЧТО КОРЕНЬ ПРОЕКТА В PYTHONPATH
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../.."  # поднимаемся из tests/unit в корень проекта
+        )
+    ),
+)
+
 """
 Smoke-тест: ORM-модели должны **импортироваться** и
 регистрироваться в `Base.metadata` без исключений.
