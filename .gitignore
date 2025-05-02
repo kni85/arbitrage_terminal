@@ -177,3 +177,5 @@ cython_debug/
 # memes
 arbitrage.db
 plan.txt
+architect.md
+dev_plan.md
