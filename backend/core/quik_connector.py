@@ -366,5 +366,38 @@ if __name__ == "__main__":
         connector.unsubscribe_quotes("TQBR", "SBER", async_cb)
         connector.close()
 
-    asyncio.run(_demo())
+    # --- Тест новых подписок на trades и orders ---
+    async def test_trades_and_orders():
+        trade_events = []
+        order_events = []
+
+        def trade_cb(event):
+            print("trade event:", event)
+            trade_events.append(event)
+
+        def order_cb(event):
+            print("order event:", event)
+            order_events.append(event)
+
+        # Подписка на сделки и заявки
+        connector.subscribe_trades("TQBR", "SBER", trade_cb)
+        connector.subscribe_orders(order_cb)
+
+        # Эмулируем приход событий (в реальном режиме это QuikPy вызывает _on_trade/_on_order)
+        connector._on_trade("TQBR", "SBER", {"price": 123.45, "qty": 10, "side": "buy"})
+        connector._on_order({"order_id": 42, "status": "FILLED", "filled": 10})
+
+        await asyncio.sleep(0.2)
+
+        # Проверяем, что события дошли до колбэков
+        assert trade_events and trade_events[0]["type"] == "trade"
+        assert order_events and order_events[0]["type"] == "order"
+
+        # Отписка
+        connector.unsubscribe_trades("TQBR", "SBER", trade_cb)
+        connector.unsubscribe_orders(order_cb)
+        print("Trade/order subscription test passed.")
+
+    asyncio.run(test_trades_and_orders())
+
     sys.exit(0)
