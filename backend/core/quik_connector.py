@@ -5,10 +5,21 @@
 -----------
 * Один экземпляр на приложение (singleton).
 * Подписка/отписка на стакан L2 (`best bid/ask`).
+* Подписка/отписка на сделки (trades).
+* Подписка/отписка на заявки (orders).
 * Асинхронная очередь событий для стратегий (`await connector.events()`).
 * Методы выставления/отмены заявок (лимит / маркет).
 * Автоподстройка под разные имена методов `QuikPy` (camelCase vs snake_case).
 * Работает оф‑лайн через `DummyQuikPy` – полезно для разработки без терминала.
+
+Структура событий в очереди:
+---------------------------
+Каждое событие — dict с ключом `type`:
+- `type: 'quote'` — обновление стакана (L2): {class_code, sec_code, bid, ask, ...}
+- `type: 'trade'` — новая сделка: {class_code, sec_code, price, qty, side, ...}
+- `type: 'order'` — обновление заявки: {order_id, status, filled, ...}
+- `type: 'error'` — ошибка: {message, details, ...}
+
 """
 
 from __future__ import annotations
@@ -66,6 +77,8 @@ except ImportError as exc:  # pragma: no cover – офлайн‑режим
 
 # ---------------------------------------------------------------------------
 QuoteCallback = Callable[[dict[str, Any]], None]
+TradeCallback = Callable[[dict[str, Any]], None]
+OrderCallback = Callable[[dict[str, Any]], None]
 
 
 class QuikConnector:
@@ -102,6 +115,8 @@ class QuikConnector:
         )
 
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
+        self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
+        self._order_callbacks: Dict[str, list[OrderCallback]] = {}
         self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -160,6 +175,65 @@ class QuikConnector:
                 self._qp.unsubscribe_level2_quotes(class_code, sec_code)
             del self._quote_callbacks[key]
             logger.info("Unsubscribed L2 %s", key)
+
+    # ------------------------------------------------------------------
+    # Подписки на сделки (trades)
+    # ------------------------------------------------------------------
+    def subscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        self._trade_callbacks.setdefault(key, []).append(cb)
+        if len(self._trade_callbacks[key]) == 1:
+            # TODO: Подключить реальную подписку на сделки через QuikPy
+            if hasattr(self._qp, "Subscribe_Trades"):
+                self._qp.Subscribe_Trades(class_code, sec_code)
+            elif hasattr(self._qp, "subscribe_trades"):
+                self._qp.subscribe_trades(class_code, sec_code)
+            logger.info("Subscribed trades %s", key)
+
+    def unsubscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        callbacks = self._trade_callbacks.get(key)
+        if not callbacks:
+            return
+        if cb in callbacks:
+            callbacks.remove(cb)
+        if not callbacks:
+            # TODO: Отключить реальную подписку на сделки через QuikPy
+            if hasattr(self._qp, "Unsubscribe_Trades"):
+                self._qp.Unsubscribe_Trades(class_code, sec_code)
+            elif hasattr(self._qp, "unsubscribe_trades"):
+                self._qp.unsubscribe_trades(class_code, sec_code)
+            del self._trade_callbacks[key]
+            logger.info("Unsubscribed trades %s", key)
+
+    # ------------------------------------------------------------------
+    # Подписки на заявки (orders)
+    # ------------------------------------------------------------------
+    def subscribe_orders(self, cb: OrderCallback) -> None:
+        # Обычно подписка на все заявки аккаунта/счёта
+        self._order_callbacks.setdefault('all', []).append(cb)
+        if len(self._order_callbacks['all']) == 1:
+            # TODO: Подключить реальную подписку на заявки через QuikPy
+            if hasattr(self._qp, "Subscribe_Orders"):
+                self._qp.Subscribe_Orders()
+            elif hasattr(self._qp, "subscribe_orders"):
+                self._qp.subscribe_orders()
+            logger.info("Subscribed orders")
+
+    def unsubscribe_orders(self, cb: OrderCallback) -> None:
+        callbacks = self._order_callbacks.get('all')
+        if not callbacks:
+            return
+        if cb in callbacks:
+            callbacks.remove(cb)
+        if not callbacks:
+            # TODO: Отключить реальную подписку на заявки через QuikPy
+            if hasattr(self._qp, "Unsubscribe_Orders"):
+                self._qp.Unsubscribe_Orders()
+            elif hasattr(self._qp, "unsubscribe_orders"):
+                self._qp.unsubscribe_orders()
+            del self._order_callbacks['all']
+            logger.info("Unsubscribed orders")
 
     # ------------------------------------------------------------------
     # Асинхронный интерфейс (получение очереди событий)
@@ -222,6 +296,40 @@ class QuikConnector:
                     except Exception as exc:  # pragma: no cover
                         logger.exception("Callback error: %s", exc)
             time.sleep(0.5)
+
+    # ------------------------------------------------------------------
+    # Вызов колбэков для trades и orders (шаблон для интеграции)
+    # ------------------------------------------------------------------
+    def _on_trade(self, class_code: str, sec_code: str, trade: dict) -> None:
+        key = f"{class_code}.{sec_code}"
+        trade_event = {"type": "trade", **trade}
+        try:
+            self._event_queue.put_nowait(trade_event)
+        except asyncio.QueueFull:
+            logger.warning("Event queue full — dropping trade")
+        for cb in self._trade_callbacks.get(key, []):
+            try:
+                if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                    asyncio.run_coroutine_threadsafe(cb(trade_event), self._main_loop)
+                else:
+                    cb(trade_event)
+            except Exception as exc:
+                logger.exception("Trade callback error: %s", exc)
+
+    def _on_order(self, order: dict) -> None:
+        order_event = {"type": "order", **order}
+        try:
+            self._event_queue.put_nowait(order_event)
+        except asyncio.QueueFull:
+            logger.warning("Event queue full — dropping order event")
+        for cb in self._order_callbacks.get('all', []):
+            try:
+                if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                    asyncio.run_coroutine_threadsafe(cb(order_event), self._main_loop)
+                else:
+                    cb(order_event)
+            except Exception as exc:
+                logger.exception("Order callback error: %s", exc)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
