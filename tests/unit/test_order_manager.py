@@ -6,7 +6,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from backend.core.order_manager import OrderManager
-from backend.db.models import Order, OrderStatus
+from backend.db.models import Order, OrderStatus, Side
 from backend.db.database import AsyncSessionLocal, Base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select
