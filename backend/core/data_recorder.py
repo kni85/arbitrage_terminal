@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Tuple
 
 from .quik_connector import QuikConnector
 from ..db.database import AsyncSessionLocal
-from ..db.models import Quote
+from ..db.models import Quote, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ class DataRecorder:
         self._task: asyncio.Task | None = None
         # Храним последнюю котировку для каждой ноги
         self._latest: Dict[InstrumentKey, Dict[str, Any]] = {}
+        # Буфер новых сделок
+        self._trades: list[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -55,9 +57,10 @@ class DataRecorder:
             return
         self._running = True
 
-        # Подписываемся на котировки
+        # Подписываемся на котировки и сделки
         for class_code, sec_code in self.instruments:
             self._connector.subscribe_quotes(class_code, sec_code, self._update_quote)
+            self._connector.subscribe_trades(class_code, sec_code, self._on_trade)
 
         # Запускаем фоновую задачу
         self._task = asyncio.create_task(self._loop(), name="data_recorder")
@@ -69,6 +72,7 @@ class DataRecorder:
             await self._task
         for class_code, sec_code in self.instruments:
             self._connector.unsubscribe_quotes(class_code, sec_code, self._update_quote)
+            self._connector.unsubscribe_trades(class_code, sec_code, self._on_trade)
         # Закрываем QuikConnector, чтобы фоновые потоки завершились
         self._connector.close()
         logger.info("DataRecorder stopped")
@@ -81,6 +85,10 @@ class DataRecorder:
         key: InstrumentKey = (data["class_code"], data["sec_code"])
         self._latest[key] = data
 
+    # Callback от QuikConnector для сделок
+    def _on_trade(self, data: Dict[str, Any]) -> None:
+        self._trades.append(data)
+
     # ------------------------------------------------------------------
     # Основной цикл: раз в `period` сек пишет в базу
     # ------------------------------------------------------------------
@@ -91,9 +99,10 @@ class DataRecorder:
             await self._flush_to_db()
 
     async def _flush_to_db(self) -> None:
-        if not self._latest:
+        if not self._latest and not self._trades:
             return
         async with AsyncSessionLocal() as session:
+            # Котировки
             for (class_code, sec_code), q in list(self._latest.items()):
                 quote = Quote(
                     timestamp=datetime.fromtimestamp(q["time"], tz=timezone.utc),
@@ -102,6 +111,17 @@ class DataRecorder:
                     ask=q["ask"],
                 )
                 session.add(quote)
+            # Сделки
+            for t in self._trades:
+                trade = Trade(
+                    ts=datetime.fromtimestamp(t["time"], tz=timezone.utc),
+                    price=t["price"],
+                    qty=t["qty"],
+                    side=t.get("side", ""),
+                    instrument_id=None,  # TODO: Проставить instrument_id по class_code+sec_code
+                )
+                session.add(trade)
+            self._trades.clear()
             try:
                 await session.commit()
             except Exception as exc:  # pragma: no cover

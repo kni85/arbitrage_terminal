@@ -166,3 +166,23 @@ class Order(Base):
     def __repr__(self) -> str:
         return (f"<Order {self.id}/{self.quik_num} {self.instrument.ticker} "
                 f"{self.side} {self.qty}@{self.price} {self.status}>")
+
+
+class Trade(Base):
+    __tablename__ = "trades"
+    __table_args__ = (
+        Index("ix_trades_inst_ts", "instrument_id", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    price: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # 'buy'/'sell'
+
+    instrument = relationship("Instrument")
+
+    def __repr__(self) -> str:
+        return f"<Trade {self.instrument.ticker} {self.ts:%H:%M:%S} {self.side} {self.qty}@{self.price}>"
