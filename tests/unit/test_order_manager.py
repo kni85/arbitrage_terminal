@@ -25,7 +25,13 @@ async def test_order_manager_place_and_cancel(monkeypatch):
     # Добавляем тестовый ордер в БД
     async with AsyncSessionLocal() as session:
         order = Order(
-            portfolio_id=1, instrument_id=1, side=OrderStatus.NEW, price=100, qty=1, filled=0, status=OrderStatus.NEW
+            portfolio_id=1,
+            instrument_id=1,
+            side=Side.LONG,  # или Side.SHORT
+            price=100,
+            qty=1,
+            filled=0,
+            status=OrderStatus.NEW
         )
         session.add(order)
         await session.commit()
