@@ -80,6 +80,7 @@ QuoteCallback = Callable[[dict[str, Any]], None]
 TradeCallback = Callable[[dict[str, Any]], None]
 OrderCallback = Callable[[dict[str, Any]], None]
 
+from backend.core.order_manager import OrderManager
 
 class QuikConnector:
     """Асинхронная обёртка над QuikPy (singleton)."""
@@ -114,6 +115,10 @@ class QuikConnector:
             callbacks_port=callbacks_port,
         )
 
+        self._order_manager = OrderManager._get_instance_for_connector(self)
+        self._qp.on_order = self._on_order
+        self._qp.on_trade = self._on_trade
+        self._qp.on_trans_reply = self._on_trans_reply
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
         self._order_callbacks: Dict[str, list[OrderCallback]] = {}
@@ -283,36 +288,14 @@ class QuikConnector:
     # ------------------------------------------------------------------
     # Вызов колбэков для trades и orders (шаблон для интеграции)
     # ------------------------------------------------------------------
-    def _on_trade(self, class_code: str, sec_code: str, trade: dict) -> None:
-        key = f"{class_code}.{sec_code}"
-        trade_event = {"type": "trade", **trade}
-        try:
-            self._event_queue.put_nowait(trade_event)
-        except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping trade")
-        for cb in self._trade_callbacks.get(key, []):
-            try:
-                if asyncio.iscoroutinefunction(cb) and self._main_loop:
-                    asyncio.run_coroutine_threadsafe(cb(trade_event), self._main_loop)
-                else:
-                    cb(trade_event)
-            except Exception as exc:
-                logger.exception("Trade callback error: %s", exc)
+    def _on_trade(self, event: dict):
+        self._order_manager.on_trade_event(event)
 
-    def _on_order(self, order: dict) -> None:
-        order_event = {"type": "order", **order}
-        try:
-            self._event_queue.put_nowait(order_event)
-        except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping order event")
-        for cb in self._order_callbacks.get('all', []):
-            try:
-                if asyncio.iscoroutinefunction(cb) and self._main_loop:
-                    asyncio.run_coroutine_threadsafe(cb(order_event), self._main_loop)
-                else:
-                    cb(order_event)
-            except Exception as exc:
-                logger.exception("Order callback error: %s", exc)
+    def _on_order(self, event: dict):
+        self._order_manager.on_order_event(event)
+
+    def _on_trans_reply(self, event: dict):
+        self._order_manager.on_trans_reply_event(event)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
@@ -387,7 +370,7 @@ if __name__ == "__main__":
         connector.subscribe_trades("TQBR", "SBER", trade_cb)
 
         # Эмулируем приход событий (в реальном режиме это QuikPy вызывает _on_trade/_on_order)
-        connector._on_trade("TQBR", "SBER", {"price": 123.45, "qty": 10, "side": "buy"})
+        connector._on_trade({"price": 123.45, "qty": 10, "side": "buy"})
         connector._on_order({"order_id": 42, "status": "FILLED", "filled": 10})
 
         await asyncio.sleep(0.2)

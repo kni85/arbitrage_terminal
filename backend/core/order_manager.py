@@ -29,6 +29,13 @@ class OrderManager:
         self._orm_to_quik: Dict[int, int] = {}
         # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
+    @staticmethod
+    def _get_instance_for_connector(connector):
+        # singleton для интеграции с QuikConnector
+        if not hasattr(connector, "_order_manager_instance"):
+            connector._order_manager_instance = OrderManager()
+        return connector._order_manager_instance
+
     async def place_limit_order(self, order_data: dict, orm_order_id: int, strategy_id: int = None) -> Optional[int]:
         """
         Выставляет лимитный ордер через QuikConnector.
@@ -89,4 +96,15 @@ class OrderManager:
             logger.warning(f"Не найден ORM Order для QUIK ID {quik_num}")
             return
         # Асинхронно обновляем статус в БД
-        asyncio.create_task(self._update_order_status(orm_order_id, status, filled)) 
+        asyncio.create_task(self._update_order_status(orm_order_id, status, filled))
+
+    def on_order_event(self, event: dict):
+        self._on_order_event(event)
+
+    def on_trade_event(self, event: dict):
+        # Здесь можно реализовать обновление filled, status и т.д. по сделке
+        pass
+
+    def on_trans_reply_event(self, event: dict):
+        # Здесь можно реализовать обработку REJECTED, ошибок, подтверждений
+        pass 
