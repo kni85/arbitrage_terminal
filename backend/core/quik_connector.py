@@ -192,26 +192,6 @@ class QuikConnector:
             logger.info("Unsubscribed trades %s", key)
 
     # ------------------------------------------------------------------
-    # Подписки на заявки (orders)
-    # ------------------------------------------------------------------
-    def subscribe_orders(self, cb: OrderCallback) -> None:
-        self._order_callbacks.setdefault('all', []).append(cb)
-        if len(self._order_callbacks['all']) == 1:
-            self._qp.subscribe_orders()
-            logger.info("Subscribed orders")
-
-    def unsubscribe_orders(self, cb: OrderCallback) -> None:
-        callbacks = self._order_callbacks.get('all')
-        if not callbacks:
-            return
-        if cb in callbacks:
-            callbacks.remove(cb)
-        if not callbacks:
-            self._qp.unsubscribe_orders()
-            del self._order_callbacks['all']
-            logger.info("Unsubscribed orders")
-
-    # ------------------------------------------------------------------
     # Асинхронный интерфейс (получение очереди событий)
     # ------------------------------------------------------------------
 

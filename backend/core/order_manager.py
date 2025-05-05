@@ -27,8 +27,7 @@ class OrderManager:
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
         self._quik_to_orm: Dict[int, int] = {}
         self._orm_to_quik: Dict[int, int] = {}
-        # Подписываемся на события по заявкам
-        self._connector.subscribe_orders(self._on_order_event)
+        # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
     async def place_limit_order(self, order_data: dict, orm_order_id: int, strategy_id: int = None) -> Optional[int]:
         """

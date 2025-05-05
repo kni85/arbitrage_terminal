@@ -41,7 +41,7 @@ async def test_order_manager_place_and_cancel(monkeypatch):
     mock_connector = MagicMock()
     mock_connector.place_limit_order = AsyncMock(return_value={"order_num": 12345})
     mock_connector.cancel_order = AsyncMock()
-    mock_connector.subscribe_orders = MagicMock()
+    # mock_connector.subscribe_orders = MagicMock()  # больше не требуется
 
     # Подменяем QuikConnector в OrderManager
     monkeypatch.setattr("backend.core.order_manager.QuikConnector", lambda: mock_connector)
