@@ -91,6 +91,14 @@ class PortfolioManager:
     async def start(self) -> None:
         self._running = True
         logger.info("PortfolioManager started")
+        # --- Восстанавливаем активные портфели из БД ---
+        async with AsyncSessionLocal() as ses:
+            result = await ses.execute(select(PortfolioConfig).where(PortfolioConfig.active == True))
+            for row in result.scalars():
+                pid = row.pid
+                config = row.config_json
+                # Запускаем стратегию с восстановленным конфигом
+                await self._start_portfolio_from_config(pid, config)
 
     async def stop(self) -> None:
         async with self._lock:
@@ -100,13 +108,13 @@ class PortfolioManager:
         logger.info("PortfolioManager stopped")
 
     async def add_portfolio(self, config: dict[str, Any]) -> str:
-        # гарантируем, что таблицы физически созданы к моменту вставки
         await ensure_tables_exist()
-
         async with self._lock:
             pid = str(uuid.uuid4())
             strategy = self._build_strategy(config)
             task = asyncio.create_task(strategy.start())
+            # Добавляем обработчик для рестарта при падении
+            task.add_done_callback(lambda t: asyncio.create_task(self._on_strategy_done(pid, config, t)))
             self._portfolios[pid] = _PortfolioRecord(strategy, task, config)
             logger.info("Portfolio %s of type %s started", pid, config.get("type"))
             await self._save_config(pid, config)
@@ -122,6 +130,16 @@ class PortfolioManager:
                 pid: {"running": rec.strategy.is_running, "config": rec.config}
                 for pid, rec in self._portfolios.items()
             }
+
+    async def update_portfolio(self, pid: str, new_config: dict[str, Any]) -> None:
+        """
+        Обновляет конфиг портфеля и перезапускает стратегию.
+        """
+        async with self._lock:
+            await self._stop_portfolio_nolock(pid)
+            await self._start_portfolio_from_config(pid, new_config)
+            await self._save_config(pid, new_config)
+            logger.info("Portfolio %s обновлён и перезапущен", pid)
 
     # ------------------------------------------------------------------
     # Внутренние методы
@@ -152,6 +170,27 @@ class PortfolioManager:
             if row:
                 row.active = False  # type: ignore[attr-defined]
                 await ses.commit()
+
+    async def _start_portfolio_from_config(self, pid: str, config: dict[str, Any]) -> None:
+        async with self._lock:
+            strategy = self._build_strategy(config)
+            task = asyncio.create_task(strategy.start())
+            # Добавляем обработчик для рестарта при падении
+            task.add_done_callback(lambda t: asyncio.create_task(self._on_strategy_done(pid, config, t)))
+            self._portfolios[pid] = _PortfolioRecord(strategy, task, config)
+            logger.info("Portfolio %s of type %s started (restore)", pid, config.get("type"))
+
+    async def _on_strategy_done(self, pid: str, config: dict[str, Any], task: asyncio.Task) -> None:
+        """
+        Обработчик завершения задачи стратегии. Если завершилась с ошибкой — рестарт.
+        """
+        try:
+            exc = task.exception()
+            if exc:
+                logger.error(f"Стратегия {pid} завершилась с ошибкой: {exc}. Перезапуск...")
+                await self._start_portfolio_from_config(pid, config)
+        except asyncio.CancelledError:
+            pass
 
 
 # ---------------------------------------------------------------------------
