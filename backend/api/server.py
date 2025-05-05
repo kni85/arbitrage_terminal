@@ -27,8 +27,12 @@ from fastapi import (
     Request,
     Response,
     status,
+    WebSocket,
+    WebSocketDisconnect,
 )
 from pydantic import BaseModel, Field
+import random
+import asyncio
 
 # ---------------------------------------------------------------------------
 # Попытка импортировать настоящий PortfolioManager. Если нет – заглушка.
@@ -160,6 +164,36 @@ async def update_portfolio(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Ошибка обновления портфеля: {exc}")
     return {"status": "updated"}
+
+
+@api_router.get("/{pid}/spread")
+async def get_portfolio_spread(pid: str, manager: PortfolioManager = Depends(get_pm)) -> Any:
+    """
+    Получить текущий spread (или spread_bid/ask) для стратегии (эмуляция).
+    В реальной реализации — брать из DataRecorder или самой стратегии.
+    """
+    summary = await manager.list_portfolios()
+    if pid not in summary:
+        raise HTTPException(status_code=404, detail="Портфель не найден")
+    # Эмулируем spread
+    spread_bid = round(random.uniform(-2, 2), 4)
+    spread_ask = round(random.uniform(-2, 2), 4)
+    return {"spread_bid": spread_bid, "spread_ask": spread_ask}
+
+
+# --- WebSocket endpoint для push-обновлений spread ---
+@api_router.websocket("/ws/portfolios/{pid}/spread")
+async def ws_portfolio_spread(websocket: WebSocket, pid: str, manager: PortfolioManager = Depends(get_pm)):
+    await websocket.accept()
+    try:
+        while True:
+            # Эмулируем spread
+            spread_bid = round(random.uniform(-2, 2), 4)
+            spread_ask = round(random.uniform(-2, 2), 4)
+            await websocket.send_json({"spread_bid": spread_bid, "spread_ask": spread_ask})
+            await asyncio.sleep(1.0)  # обновление раз в секунду
+    except WebSocketDisconnect:
+        pass
 
 
 # ---------------------------------------------------------------------------
