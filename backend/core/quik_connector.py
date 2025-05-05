@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 try:
     from QuikPy import QuikPy  # type: ignore
 except ImportError as exc:  # pragma: no cover – офлайн‑режим
-
+    print(f"!!! ВНИМАНИЕ: QuikPy не найден ({exc}) — используется DummyQuikPy.")
     logger.warning("QuikPy не найден (%s) — используется DummyQuikPy.", exc)
 
     class QuikPy:  # type: ignore[override]
@@ -68,6 +68,7 @@ except ImportError as exc:  # pragma: no cover – офлайн‑режим
 
         # --- Торговля ----------------------------------------------------
         def send_transaction(self, tr: dict[str, Any]):
+            print(f"!!! DummyQuikPy: send_transaction {tr}")
             logger.info("DummyQuikPy: send_transaction %s", tr)
             return {"result": 0, "message": "stub"}
 
