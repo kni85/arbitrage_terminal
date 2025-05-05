@@ -345,9 +345,6 @@ class QuikConnector:
             class_code, sec_code = key.split(".")
             self._qp.subscribe_trades(class_code, sec_code)
             logger.info("Reconnect: подписка trades %s", key)
-        if self._order_callbacks.get('all'):
-            self._qp.subscribe_orders()
-            logger.info("Reconnect: подписка orders")
 
 
 # ---------------------------------------------------------------------------
@@ -386,9 +383,8 @@ if __name__ == "__main__":
             print("order event:", event)
             order_events.append(event)
 
-        # Подписка на сделки и заявки
+        # Подписка на сделки
         connector.subscribe_trades("TQBR", "SBER", trade_cb)
-        connector.subscribe_orders(order_cb)
 
         # Эмулируем приход событий (в реальном режиме это QuikPy вызывает _on_trade/_on_order)
         connector._on_trade("TQBR", "SBER", {"price": 123.45, "qty": 10, "side": "buy"})
@@ -402,7 +398,6 @@ if __name__ == "__main__":
 
         # Отписка
         connector.unsubscribe_trades("TQBR", "SBER", trade_cb)
-        connector.unsubscribe_orders(order_cb)
         print("Trade/order subscription test passed.")
 
     asyncio.run(test_trades_and_orders())
