@@ -7,6 +7,14 @@ import logging  # Будем вести лог
 
 from pytz import timezone  # Работаем с временнОй зоной
 
+# Настройка расширенного логирования для QuikPy
+logger = logging.getLogger('QuikPy')
+logger.setLevel(logging.DEBUG)
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    logger.addHandler(handler)
+
 
 class QuikPy:
     """Работа с QUIK из Python через LUA скрипты QUIK# https://github.com/finsight/QUIKSharp/tree/master/src/QuikSharp/lua
