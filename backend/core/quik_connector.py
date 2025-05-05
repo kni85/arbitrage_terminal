@@ -303,10 +303,20 @@ class QuikConnector:
         self._stop_quote_thread.set()
         if hasattr(self, "_quote_thread") and self._quote_thread.is_alive():
             self._quote_thread.join(timeout=2)
+        # Стандартное закрытие QuikPy
         if hasattr(self._qp, "close_connection_and_thread"):
             self._qp.close_connection_and_thread()
         elif hasattr(self._qp, "CloseConnectionAndThread"):
             self._qp.CloseConnectionAndThread()
+        # Monkey-patch: гарантированное завершение CallbackThread
+        if hasattr(self._qp, "callback_exit_event"):
+            self._qp.callback_exit_event.set()
+        if hasattr(self._qp, "callback_thread") and hasattr(self._qp.callback_thread, "is_alive"):
+            try:
+                if self._qp.callback_thread.is_alive():
+                    self._qp.callback_thread.join(timeout=2)
+            except Exception:
+                pass
         logger.info("QuikConnector closed")
 
     # ------------------------------------------------------------------
