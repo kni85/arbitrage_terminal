@@ -209,10 +209,15 @@ class QuikConnector:
     async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         method = getattr(self._qp, "send_transaction")
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return await loop.run_in_executor(None, method, tr)
+            result = await loop.run_in_executor(None, method, tr)
+            print(f"===> Ответ QUIK: {result}")
+            logger.info(f"Ответ QUIK на заявку: {result}")
+            return result
         except Exception as exc:
-            logger.exception("Ошибка при отправке лимитного ордера: %s", exc)
+            print(f"===> Ошибка при отправке заявки: {exc}")
+            logger.exception(f"Ошибка при отправке лимитного ордера: {exc}")
             error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
             try:
                 self._event_queue.put_nowait(error_event)
