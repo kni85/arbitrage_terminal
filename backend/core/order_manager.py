@@ -102,9 +102,53 @@ class OrderManager:
         self._on_order_event(event)
 
     def on_trade_event(self, event: dict):
-        # Здесь можно реализовать обновление filled, status и т.д. по сделке
-        pass
+        """
+        Обработка события по сделке (OnTrade/OnAllTrade): обновление filled, leaves_qty, статуса ордера.
+        event — dict с полями order_num (QUIK), qty (исполнено), ...
+        """
+        quik_num = event.get("order_num") or event.get("order_id")
+        qty = event.get("qty")
+        orm_order_id = self._quik_to_orm.get(quik_num)
+        if orm_order_id is None:
+            logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num}")
+            return
+        async def update():
+            async with AsyncSessionLocal() as session:
+                order = await session.get(Order, orm_order_id)
+                if order:
+                    order.filled = (order.filled or 0) + (qty or 0)
+                    order.leaves_qty = max(order.qty - order.filled, 0)
+                    # PARTIAL или FILLED
+                    if order.filled >= order.qty:
+                        order.status = OrderStatus.FILLED
+                    else:
+                        order.status = OrderStatus.PARTIAL
+                    await session.commit()
+                    logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, leaves_qty={order.leaves_qty}, status={order.status}")
+        asyncio.create_task(update())
 
     def on_trans_reply_event(self, event: dict):
-        # Здесь можно реализовать обработку REJECTED, ошибок, подтверждений
-        pass 
+        """
+        Обработка события OnTransReply: ошибки, REJECTED, CANCELLED и др.
+        event — dict с полями order_num (QUIK), status, result, error_code, error_msg, ...
+        """
+        quik_num = event.get("order_num") or event.get("order_id")
+        status = event.get("status")
+        error_code = event.get("error_code")
+        error_msg = event.get("error_msg")
+        orm_order_id = self._quik_to_orm.get(quik_num)
+        if orm_order_id is None:
+            logger.warning(f"[TRANS_REPLY] Не найден ORM Order для QUIK ID {quik_num}")
+            return
+        async def update():
+            async with AsyncSessionLocal() as session:
+                order = await session.get(Order, orm_order_id)
+                if order:
+                    if error_code or (status and status.upper() == "REJECTED"):
+                        order.status = OrderStatus.REJECTED
+                        logger.error(f"[TRANS_REPLY] Order {order.id} REJECTED: {error_code} {error_msg}")
+                    elif status and status.upper() == "CANCELLED":
+                        order.status = OrderStatus.CANCELLED
+                        logger.info(f"[TRANS_REPLY] Order {order.id} CANCELLED")
+                    await session.commit()
+        asyncio.create_task(update()) 
