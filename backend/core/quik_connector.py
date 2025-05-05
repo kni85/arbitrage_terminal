@@ -154,11 +154,7 @@ class QuikConnector:
         key = f"{class_code}.{sec_code}"
         self._quote_callbacks.setdefault(key, []).append(cb)
         if len(self._quote_callbacks[key]) == 1:
-            # QuikPy может использовать два разных имени метода
-            if hasattr(self._qp, "Subscribe_Level_II_Quotes"):
-                self._qp.Subscribe_Level_II_Quotes(class_code, sec_code)
-            else:
-                self._qp.subscribe_level2_quotes(class_code, sec_code)
+            self._qp.subscribe_level2_quotes(class_code, sec_code)
             logger.info("Subscribed L2 %s", key)
 
     def unsubscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None:
@@ -169,10 +165,7 @@ class QuikConnector:
         if cb in callbacks:
             callbacks.remove(cb)
         if not callbacks:
-            if hasattr(self._qp, "Unsubscribe_Level_II_Quotes"):
-                self._qp.Unsubscribe_Level_II_Quotes(class_code, sec_code)
-            else:
-                self._qp.unsubscribe_level2_quotes(class_code, sec_code)
+            self._qp.unsubscribe_level2_quotes(class_code, sec_code)
             del self._quote_callbacks[key]
             logger.info("Unsubscribed L2 %s", key)
 
@@ -183,11 +176,7 @@ class QuikConnector:
         key = f"{class_code}.{sec_code}"
         self._trade_callbacks.setdefault(key, []).append(cb)
         if len(self._trade_callbacks[key]) == 1:
-            # TODO: Подключить реальную подписку на сделки через QuikPy
-            if hasattr(self._qp, "Subscribe_Trades"):
-                self._qp.Subscribe_Trades(class_code, sec_code)
-            elif hasattr(self._qp, "subscribe_trades"):
-                self._qp.subscribe_trades(class_code, sec_code)
+            self._qp.subscribe_trades(class_code, sec_code)
             logger.info("Subscribed trades %s", key)
 
     def unsubscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
@@ -198,11 +187,7 @@ class QuikConnector:
         if cb in callbacks:
             callbacks.remove(cb)
         if not callbacks:
-            # TODO: Отключить реальную подписку на сделки через QuikPy
-            if hasattr(self._qp, "Unsubscribe_Trades"):
-                self._qp.Unsubscribe_Trades(class_code, sec_code)
-            elif hasattr(self._qp, "unsubscribe_trades"):
-                self._qp.unsubscribe_trades(class_code, sec_code)
+            self._qp.unsubscribe_trades(class_code, sec_code)
             del self._trade_callbacks[key]
             logger.info("Unsubscribed trades %s", key)
 
@@ -210,14 +195,9 @@ class QuikConnector:
     # Подписки на заявки (orders)
     # ------------------------------------------------------------------
     def subscribe_orders(self, cb: OrderCallback) -> None:
-        # Обычно подписка на все заявки аккаунта/счёта
         self._order_callbacks.setdefault('all', []).append(cb)
         if len(self._order_callbacks['all']) == 1:
-            # TODO: Подключить реальную подписку на заявки через QuikPy
-            if hasattr(self._qp, "Subscribe_Orders"):
-                self._qp.Subscribe_Orders()
-            elif hasattr(self._qp, "subscribe_orders"):
-                self._qp.subscribe_orders()
+            self._qp.subscribe_orders()
             logger.info("Subscribed orders")
 
     def unsubscribe_orders(self, cb: OrderCallback) -> None:
@@ -227,11 +207,7 @@ class QuikConnector:
         if cb in callbacks:
             callbacks.remove(cb)
         if not callbacks:
-            # TODO: Отключить реальную подписку на заявки через QuikPy
-            if hasattr(self._qp, "Unsubscribe_Orders"):
-                self._qp.Unsubscribe_Orders()
-            elif hasattr(self._qp, "unsubscribe_orders"):
-                self._qp.unsubscribe_orders()
+            self._qp.unsubscribe_orders()
             del self._order_callbacks['all']
             logger.info("Unsubscribed orders")
 
@@ -251,12 +227,11 @@ class QuikConnector:
 
     async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
+        method = getattr(self._qp, "send_transaction")
         try:
             return await loop.run_in_executor(None, method, tr)
         except Exception as exc:
             logger.exception("Ошибка при отправке лимитного ордера: %s", exc)
-            # Генерируем событие типа 'error' в event_queue
             error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
             try:
                 self._event_queue.put_nowait(error_event)
@@ -266,7 +241,7 @@ class QuikConnector:
 
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
+        method = getattr(self._qp, "send_transaction")
         try:
             return await loop.run_in_executor(None, method, tr)
         except Exception as exc:
@@ -281,7 +256,7 @@ class QuikConnector:
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         tr = {"ACTION": "KILL_ORDER", "ORDER_KEY": order_id}
         loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
+        method = getattr(self._qp, "send_transaction")
         try:
             return await loop.run_in_executor(None, method, tr)
         except Exception as exc:
@@ -384,23 +359,14 @@ class QuikConnector:
         # Повторно подписываемся на все активные инструменты
         for key in self._quote_callbacks:
             class_code, sec_code = key.split(".")
-            if hasattr(self._qp, "Subscribe_Level_II_Quotes"):
-                self._qp.Subscribe_Level_II_Quotes(class_code, sec_code)
-            else:
-                self._qp.subscribe_level2_quotes(class_code, sec_code)
+            self._qp.subscribe_level2_quotes(class_code, sec_code)
             logger.info("Reconnect: подписка L2 %s", key)
         for key in self._trade_callbacks:
             class_code, sec_code = key.split(".")
-            if hasattr(self._qp, "Subscribe_Trades"):
-                self._qp.Subscribe_Trades(class_code, sec_code)
-            elif hasattr(self._qp, "subscribe_trades"):
-                self._qp.subscribe_trades(class_code, sec_code)
+            self._qp.subscribe_trades(class_code, sec_code)
             logger.info("Reconnect: подписка trades %s", key)
         if self._order_callbacks.get('all'):
-            if hasattr(self._qp, "Subscribe_Orders"):
-                self._qp.Subscribe_Orders()
-            elif hasattr(self._qp, "subscribe_orders"):
-                self._qp.subscribe_orders()
+            self._qp.subscribe_orders()
             logger.info("Reconnect: подписка orders")
 
 
