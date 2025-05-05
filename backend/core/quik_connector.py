@@ -318,6 +318,7 @@ class QuikConnector:
             except Exception:
                 pass
         logger.info("QuikConnector closed")
+        QuikConnector._instance = None
 
     # ------------------------------------------------------------------
     # Реализация reconnect: пересоздание соединения и повторная подписка
