@@ -5,6 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
+import random
 import pytest
 import asyncio
 from backend.core.order_manager import OrderManager
@@ -48,9 +49,11 @@ async def test_live_order_manager_sber_buy_and_cancel():
         "SECCODE": "SBER",
         "ACCOUNT": ACCOUNT,   # Ваш торговый счёт
         "OPERATION": "B",   # Покупка
-        "PRICE": 230,
-        "QUANTITY": 1,
-        # Добавьте CLIENT_CODE, TRANS_ID и др. если требуется вашим брокером
+        "PRICE": "275",
+        "QUANTITY": "1",
+        "TRANS_ID": "1",  # Уникальный идентификатор транзакции
+        "CLIENT_CODE": "1360W2"
+    # Добавьте CLIENT_CODE и др. если требуется вашим брокером
     }
 
     # Отправляем заявку
