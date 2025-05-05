@@ -80,8 +80,6 @@ QuoteCallback = Callable[[dict[str, Any]], None]
 TradeCallback = Callable[[dict[str, Any]], None]
 OrderCallback = Callable[[dict[str, Any]], None]
 
-from backend.core.order_manager import OrderManager
-
 class QuikConnector:
     """Асинхронная обёртка над QuikPy (singleton)."""
 
@@ -115,10 +113,6 @@ class QuikConnector:
             callbacks_port=callbacks_port,
         )
 
-        self._order_manager = OrderManager._get_instance_for_connector(self)
-        self._qp.on_order = self._on_order
-        self._qp.on_trade = self._on_trade
-        self._qp.on_trans_reply = self._on_trans_reply
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
         self._order_callbacks: Dict[str, list[OrderCallback]] = {}
@@ -288,14 +282,17 @@ class QuikConnector:
     # ------------------------------------------------------------------
     # Вызов колбэков для trades и orders (шаблон для интеграции)
     # ------------------------------------------------------------------
-    def _on_trade(self, event: dict):
-        self._order_manager.on_trade_event(event)
+    def _on_trade(self, event):
+        from backend.core.order_manager import OrderManager
+        OrderManager._get_instance_for_connector(self).on_trade_event(event)
 
-    def _on_order(self, event: dict):
-        self._order_manager.on_order_event(event)
+    def _on_order(self, event):
+        from backend.core.order_manager import OrderManager
+        OrderManager._get_instance_for_connector(self).on_order_event(event)
 
-    def _on_trans_reply(self, event: dict):
-        self._order_manager.on_trans_reply_event(event)
+    def _on_trans_reply(self, event):
+        from backend.core.order_manager import OrderManager
+        OrderManager._get_instance_for_connector(self).on_trans_reply_event(event)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
