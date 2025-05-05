@@ -44,6 +44,7 @@ class StrategyConfig:
     entry_levels: List[float] = field(default_factory=lambda: [0.5])  # отклонение спреда
     exit_level: float = 0.1  # возвращение спреда к 0 для выхода
     poll_interval: float = 0.5  # сек между проверками рынка
+    mode: str = "shooter"  # shooter или market_maker
 
 
 # ---------------------------------------------------------------------------
@@ -89,66 +90,98 @@ class BaseStrategy(abc.ABC):
 # Простейшая реализация парного арбитража (имитация котировок)
 # ---------------------------------------------------------------------------
 
+from .order_manager import OrderManager
+
 class PairArbitrageStrategy(BaseStrategy):
-    """Демонстрационная стратегия: покупаем/продаём спред между двумя ценами."""
+    """Стратегия парного арбитража с поддержкой shooter/market_maker и реальными ордерами."""
 
     def __init__(self, config: StrategyConfig):
         super().__init__(config)
         self.position_open = False
         self.entry_side: Optional[int] = None  # 1 если long leg1/short leg2, -1 наоборот
+        self.order_manager = OrderManager()
+        self.active_orders = []  # Список id активных ордеров
 
     async def _loop(self) -> None:
-        """Имитация торгового цикла: случайные котировки и логика вход/выход."""
-        logger.info("Стратегия %s запущена", self.cfg.name)
+        logger.info("Стратегия %s запущена (mode=%s)", self.cfg.name, self.cfg.mode)
         while self._running:
-            # 1. Получаем (эмулируем) цены
-            price1 = self._simulate_price(self.cfg.leg1.ticker)
-            price2 = self._simulate_price(self.cfg.leg2.ticker)
+            # 1. Получаем (эмулируем) bid/ask обеих ног
+            bid1, ask1 = self._simulate_bid_ask(self.cfg.leg1.ticker)
+            bid2, ask2 = self._simulate_bid_ask(self.cfg.leg2.ticker)
 
-            # 2. Рассчитываем спред (базис)
-            spread = price1 * self.cfg.leg1.price_ratio - price2 * self.cfg.leg2.price_ratio
-            logger.debug("[%s] price1=%s price2=%s spread=%.4f", self.cfg.name, price1, price2, spread)
+            # 2. Рассчитываем spread_bid/ask
+            spread_bid = bid1 * self.cfg.leg1.price_ratio - ask2 * self.cfg.leg2.price_ratio
+            spread_ask = ask1 * self.cfg.leg1.price_ratio - bid2 * self.cfg.leg2.price_ratio
+            logger.debug("[%s] spread_bid=%.4f spread_ask=%.4f", self.cfg.name, spread_bid, spread_ask)
 
             # 3. Логика входа
             if not self.position_open:
                 for level in sorted(self.cfg.entry_levels):
-                    if spread >= level:
-                        await self._enter_position(side=-1, spread=spread)  # short spread
+                    if spread_bid >= level:
+                        await self._enter_position(side=-1, spread=spread_bid)
                         break
-                    if spread <= -level:
-                        await self._enter_position(side=1, spread=spread)  # long spread
+                    if spread_ask <= -level:
+                        await self._enter_position(side=1, spread=spread_ask)
                         break
             else:
                 # 4. Логика выхода
-                if self.entry_side == 1 and spread >= -self.cfg.exit_level:
-                    await self._exit_position(spread)
-                elif self.entry_side == -1 and spread <= self.cfg.exit_level:
-                    await self._exit_position(spread)
+                if self.entry_side == 1 and spread_bid >= -self.cfg.exit_level:
+                    await self._exit_position(spread_bid)
+                elif self.entry_side == -1 and spread_ask <= self.cfg.exit_level:
+                    await self._exit_position(spread_ask)
 
             await asyncio.sleep(self.cfg.poll_interval)
         logger.info("Стратегия %s остановлена", self.cfg.name)
 
-    # ------------------------ Вспомогательные методы -----------------------
-
     async def _enter_position(self, side: int, spread: float) -> None:
-        """Открытие позиции.
-
+        """
+        Открытие позиции.
         side =  1 → long leg1 / short leg2
         side = -1 → short leg1 / long leg2
         """
         self.position_open = True
         self.entry_side = side
         logger.info(
-            "[%s] >>> ОТКРЫТА позиция side=%s (spread=%.4f)", self.cfg.name, side, spread
+            "[%s] >>> ОТКРЫТА позиция side=%s (spread=%.4f) mode=%s", self.cfg.name, side, spread, self.cfg.mode
         )
-        # Здесь будет логика выставления ордеров через QuikConnector
+        # --- Пример вызова OrderManager ---
+        if self.cfg.mode == "shooter":
+            # Вход по рынку (шаблон)
+            logger.info("Вход по рынку: отправка market-ордеров через OrderManager")
+            # await self.order_manager.place_market_order(...)
+        elif self.cfg.mode == "market_maker":
+            # Котируем лимитным ордером первую ногу, вторая — по рынку
+            logger.info("Котирование первой ноги лимитным ордером через OrderManager")
+            # await self.order_manager.place_limit_order(...)
+            # После исполнения лимитного — отправить market-ордер по второй ноге
+        # ---
 
     async def _exit_position(self, spread: float) -> None:
         """Закрытие позиции."""
         logger.info("[%s] <<< ЗАКРЫТА позиция (spread=%.4f)", self.cfg.name, spread)
         self.position_open = False
         self.entry_side = None
-        # Здесь будет реальное закрытие через QUIK
+        # --- Пример вызова OrderManager для выхода ---
+        if self.cfg.mode == "shooter":
+            logger.info("Выход по рынку: отправка market-ордеров через OrderManager")
+            # await self.order_manager.place_market_order(...)
+        elif self.cfg.mode == "market_maker":
+            logger.info("Котирование первой ноги лимитным ордером для выхода через OrderManager")
+            # await self.order_manager.place_limit_order(...)
+            # После исполнения лимитного — отправить market-ордер по второй ноге
+        # ---
+
+    @classmethod
+    def _simulate_bid_ask(cls, ticker: str) -> tuple[float, float]:
+        """Генерирует псевдо‑bid/ask: случайное блуждание."""
+        import random
+        base = cls._price_state.get(ticker, random.uniform(100, 110))
+        base += random.uniform(-0.5, 0.5)
+        cls._price_state[ticker] = base
+        spread = random.uniform(0.01, 0.10)
+        bid = round(base - spread / 2, 4)
+        ask = round(base + spread / 2, 4)
+        return bid, ask
 
     # --------------------- Служебная эмуляция цен --------------------------
 
