@@ -252,18 +252,46 @@ class QuikConnector:
     async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
-        return await loop.run_in_executor(None, method, tr)
+        try:
+            return await loop.run_in_executor(None, method, tr)
+        except Exception as exc:
+            logger.exception("Ошибка при отправке лимитного ордера: %s", exc)
+            # Генерируем событие типа 'error' в event_queue
+            error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.warning("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
 
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
-        return await loop.run_in_executor(None, method, tr)
+        try:
+            return await loop.run_in_executor(None, method, tr)
+        except Exception as exc:
+            logger.exception("Ошибка при отправке рыночного ордера: %s", exc)
+            error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.warning("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
 
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         tr = {"ACTION": "KILL_ORDER", "ORDER_KEY": order_id}
         loop = asyncio.get_running_loop()
         method = getattr(self._qp, "send_transaction", getattr(self._qp, "SendTransaction"))
-        return await loop.run_in_executor(None, method, tr)
+        try:
+            return await loop.run_in_executor(None, method, tr)
+        except Exception as exc:
+            logger.exception("Ошибка при отмене ордера: %s", exc)
+            error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.warning("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
 
     # ------------------------------------------------------------------
     # Поток‑эмулятор котировок (офлайн)
@@ -341,6 +369,39 @@ class QuikConnector:
         elif hasattr(self._qp, "CloseConnectionAndThread"):
             self._qp.CloseConnectionAndThread()
         logger.info("QuikConnector closed")
+
+    # ------------------------------------------------------------------
+    # Реализация reconnect: пересоздание соединения и повторная подписка
+    # ------------------------------------------------------------------
+    def reconnect(self) -> None:
+        """
+        Пересоздаёт соединение с QuikPy и повторно подписывается на все активные инструменты.
+        """
+        logger.warning("Выполняется reconnect QuikConnector!")
+        self.close()
+        # Пересоздаём QuikPy
+        self._qp = QuikPy()
+        # Повторно подписываемся на все активные инструменты
+        for key in self._quote_callbacks:
+            class_code, sec_code = key.split(".")
+            if hasattr(self._qp, "Subscribe_Level_II_Quotes"):
+                self._qp.Subscribe_Level_II_Quotes(class_code, sec_code)
+            else:
+                self._qp.subscribe_level2_quotes(class_code, sec_code)
+            logger.info("Reconnect: подписка L2 %s", key)
+        for key in self._trade_callbacks:
+            class_code, sec_code = key.split(".")
+            if hasattr(self._qp, "Subscribe_Trades"):
+                self._qp.Subscribe_Trades(class_code, sec_code)
+            elif hasattr(self._qp, "subscribe_trades"):
+                self._qp.subscribe_trades(class_code, sec_code)
+            logger.info("Reconnect: подписка trades %s", key)
+        if self._order_callbacks.get('all'):
+            if hasattr(self._qp, "Subscribe_Orders"):
+                self._qp.Subscribe_Orders()
+            elif hasattr(self._qp, "subscribe_orders"):
+                self._qp.subscribe_orders()
+            logger.info("Reconnect: подписка orders")
 
 
 # ---------------------------------------------------------------------------
