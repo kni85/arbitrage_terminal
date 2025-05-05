@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Tuple
 
 from .quik_connector import QuikConnector
 from ..db.database import AsyncSessionLocal
-from ..db.models import Quote, Trade, Instrument
+from ..db.models import Quote, Trade, Instrument, PortfolioConfig
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +161,46 @@ class DataRecorder:
             except Exception as exc:  # pragma: no cover
                 await session.rollback()
                 logger.exception("DB commit failed: %s", exc)
+
+    @classmethod
+    async def from_active_portfolios(cls, period: float = 1.0) -> "DataRecorder":
+        """
+        Создаёт DataRecorder, автоматически собирая список инструментов из активных портфелей (PortfolioConfig).
+        """
+        instruments: set[InstrumentKey] = set()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                PortfolioConfig.__table__.select().where(PortfolioConfig.active == True)
+            )
+            for row in result:
+                # Ожидаем, что config_json содержит список ног с class_code и sec_code
+                config = row[3]  # config_json
+                if not config:
+                    continue
+                try:
+                    legs = config.get("legs") or []
+                    for leg in legs:
+                        instruments.add((leg["class_code"], leg["sec_code"]))
+                except Exception as exc:
+                    logger.warning(f"Некорректный config_json в портфеле: {exc}")
+        return cls(list(instruments), period=period)
+
+    async def update_instruments(self, new_instruments: list[InstrumentKey]) -> None:
+        """
+        Динамически обновляет список инструментов: подписывается на новые, отписывается от неактуальных.
+        """
+        to_add = set(new_instruments) - set(self.instruments)
+        to_remove = set(self.instruments) - set(new_instruments)
+        for class_code, sec_code in to_remove:
+            self._connector.unsubscribe_quotes(class_code, sec_code, self._update_quote)
+            self._connector.unsubscribe_trades(class_code, sec_code, self._on_trade)
+            self._latest.pop((class_code, sec_code), None)
+        for class_code, sec_code in to_add:
+            self._connector.subscribe_quotes(class_code, sec_code, self._update_quote)
+            self._connector.subscribe_trades(class_code, sec_code, self._on_trade)
+        self.instruments = list(new_instruments)
+        await self._init_instrument_id_cache()
+        logger.info(f"DataRecorder instruments обновлены: {self.instruments}")
 
 
 # ---------------------------------------------------------------------------
