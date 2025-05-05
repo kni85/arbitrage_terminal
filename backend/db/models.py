@@ -156,12 +156,14 @@ class Order(Base):
     quik_num: Mapped[int | None] = mapped_column(Integer)                      # № заявки в QUIK
 
     portfolio_id:  Mapped[int]  = mapped_column(ForeignKey("portfolio_configs.id"), nullable=False)
+    strategy_id:   Mapped[int | None] = mapped_column(Integer, nullable=True, comment="ID стратегии (если нужно)")
     instrument_id: Mapped[int]  = mapped_column(ForeignKey("instruments.id"), nullable=False)
 
     side:    Mapped[Side]        = mapped_column(Enum(Side), nullable=False)
     price:   Mapped[float]       = mapped_column(Numeric(18, 6), nullable=False)
     qty:     Mapped[int]         = mapped_column(Integer, nullable=False)
     filled:  Mapped[int]         = mapped_column(Integer, default=0)
+    leaves_qty: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Остаток объёма для исполнения (leaves_qty)")
 
     status:  Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.NEW)
 

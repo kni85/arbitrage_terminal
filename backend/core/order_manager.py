@@ -30,11 +30,12 @@ class OrderManager:
         # Подписываемся на события по заявкам
         self._connector.subscribe_orders(self._on_order_event)
 
-    async def place_limit_order(self, order_data: dict, orm_order_id: int) -> Optional[int]:
+    async def place_limit_order(self, order_data: dict, orm_order_id: int, strategy_id: int = None) -> Optional[int]:
         """
         Выставляет лимитный ордер через QuikConnector.
         order_data — dict с параметрами для QUIK (ACTION, CLASSCODE, SECCODE, PRICE, QUANTITY, ...)
         orm_order_id — id ORM Order, который будет связан с QUIK ID
+        strategy_id — id стратегии (если требуется связка)
         Возвращает QUIK ID (quik_num) или None.
         """
         resp = await self._connector.place_limit_order(order_data)
@@ -42,8 +43,8 @@ class OrderManager:
         if quik_num is not None:
             self._quik_to_orm[quik_num] = orm_order_id
             self._orm_to_quik[orm_order_id] = quik_num
-            # Обновляем quik_num в БД
-            await self._update_order_quik_num(orm_order_id, quik_num)
+            # Обновляем quik_num и strategy_id в БД
+            await self._update_order_quik_num(orm_order_id, quik_num, strategy_id)
         return quik_num
 
     async def cancel_order(self, orm_order_id: int) -> None:
@@ -54,22 +55,26 @@ class OrderManager:
             return
         await self._connector.cancel_order(str(quik_num))
 
-    async def _update_order_quik_num(self, orm_order_id: int, quik_num: int) -> None:
-        """Обновляет поле quik_num в ORM Order."""
+    async def _update_order_quik_num(self, orm_order_id: int, quik_num: int, strategy_id: int = None) -> None:
+        """Обновляет поле quik_num и strategy_id в ORM Order."""
         async with AsyncSessionLocal() as session:
             order = await session.get(Order, orm_order_id)
             if order:
                 order.quik_num = quik_num
+                if strategy_id is not None:
+                    order.strategy_id = strategy_id
                 await session.commit()
 
     async def _update_order_status(self, orm_order_id: int, status: OrderStatus, filled: int = None) -> None:
-        """Обновляет статус и исполненный объём ордера в БД."""
+        """Обновляет статус, исполненный объём и leaves_qty ордера в БД."""
         async with AsyncSessionLocal() as session:
             order = await session.get(Order, orm_order_id)
             if order:
                 order.status = status
                 if filled is not None:
                     order.filled = filled
+                    # Корректно рассчитываем leaves_qty
+                    order.leaves_qty = max(order.qty - order.filled, 0)
                 await session.commit()
 
     def _on_order_event(self, event: dict) -> None:
