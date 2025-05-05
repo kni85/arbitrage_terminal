@@ -82,6 +82,15 @@ class PortfolioConfig(Base):
     pid: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid.uuid4()), nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    # --- Новые поля для конфигурирования стратегии ---
+    strategy_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="ID стратегии (тип)")
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True, comment="Режим работы (shooter, market_maker и др.)")
+    qty_ratio: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="Коэффициенты объёма (формула или число)")
+    price_ratio: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="Коэффициенты цены (формула или число)")
+    threshold: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True, comment="Порог входа (уровень отклонения базиса)")
+    leaves_qty: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Остаток объёма для исполнения (leaves_qty)")
+    # ---
+
     config_json = Column(JSON, nullable=False)            # raw-конфиг (legs, ratios…)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
