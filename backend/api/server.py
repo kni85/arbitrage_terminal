@@ -8,6 +8,7 @@
 * **GET  /api/portfolios/{pid}**          – подробная информация.
 * **POST /api/portfolios/{pid}/stop**     – остановить и удалить портфель
   (ответ 204 No Content).
+* **PUT  /api/portfolios/{pid}**           – обновить параметры портфеля и перезапустить стратегию
 
 Экземпляр `PortfolioManager` хранится в `app.state.portfolio_manager` и
 передаётся через зависимость `get_pm()`.
@@ -16,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi import (
     APIRouter,
@@ -47,17 +48,26 @@ except ImportError as exc:  # pragma: no cover – до появления real 
         async def stop_portfolio(self, pid: str) -> None:  # noqa: D401
             pass
 
+        async def update_portfolio(self, pid: str, config: Dict[str, Any]) -> None:  # noqa: D401
+            pass
+
 # ---------------------------------------------------------------------------
 # Pydantic‑модели входа/выхода
 # ---------------------------------------------------------------------------
 
 class PortfolioConfig(BaseModel):
-    """Конфигурация портфеля (поля свободные, минимум `name`)."""
-
+    """Конфигурация портфеля (минимум name, legs, type)."""
     name: str = Field(..., description="Имя портфеля в интерфейсе")
+    type: str = Field(..., description="Тип стратегии (pair, triangular и др.)")
+    leg1: Dict[str, Any] = Field(..., description="Первая нога")
+    leg2: Dict[str, Any] = Field(..., description="Вторая нога")
+    entry_levels: Optional[List[float]] = Field(None, description="Уровни входа")
+    exit_level: Optional[float] = Field(None, description="Уровень выхода")
+    poll_interval: Optional[float] = Field(None, description="Интервал опроса")
+    mode: Optional[str] = Field(None, description="Режим работы (shooter, market_maker)")
 
     class Config:
-        extra = "allow"  # разрешаем любые доп. поля: legs, ratios, levels …
+        extra = "allow"  # разрешаем любые доп. поля: legs, ratios, ...
 
 
 class PortfolioCreateResponse(BaseModel):
@@ -131,6 +141,25 @@ async def stop_portfolio(
     """Остановить и удалить портфель. Ответ 204 без тела."""
     await manager.stop_portfolio(pid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api_router.put("/{pid}", status_code=status.HTTP_200_OK)
+async def update_portfolio(
+    pid: str,
+    config: PortfolioConfig,
+    manager: PortfolioManager = Depends(get_pm),
+) -> Any:
+    """
+    Обновить параметры портфеля и перезапустить стратегию.
+    """
+    summary = await manager.list_portfolios()
+    if pid not in summary:
+        raise HTTPException(status_code=404, detail="Портфель не найден")
+    try:
+        await manager.update_portfolio(pid, config.dict())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Ошибка обновления портфеля: {exc}")
+    return {"status": "updated"}
 
 
 # ---------------------------------------------------------------------------
