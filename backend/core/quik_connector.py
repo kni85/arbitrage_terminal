@@ -119,6 +119,7 @@ class QuikConnector:
         self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
 
+        self._stop_quote_thread = threading.Event()
         self._quote_thread = threading.Thread(
             target=self._quote_listener_loop,
             name="QP-quotes",
@@ -254,7 +255,7 @@ class QuikConnector:
     def _quote_listener_loop(self) -> None:
         import random, time
 
-        while True:
+        while not self._stop_quote_thread.is_set():
             for key, callbacks in list(self._quote_callbacks.items()):
                 class_code, sec_code = key.split(".")
                 quote = {
@@ -299,6 +300,9 @@ class QuikConnector:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
+        self._stop_quote_thread.set()
+        if hasattr(self, "_quote_thread") and self._quote_thread.is_alive():
+            self._quote_thread.join(timeout=2)
         if hasattr(self._qp, "close_connection_and_thread"):
             self._qp.close_connection_and_thread()
         elif hasattr(self._qp, "CloseConnectionAndThread"):
