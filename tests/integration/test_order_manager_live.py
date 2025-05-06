@@ -13,14 +13,14 @@ from backend.db.models import Order, OrderStatus, Side
 from backend.db.database import AsyncSessionLocal
 
 @pytest.mark.asyncio
-async def test_live_order_manager_sber_buy_and_cancel():
+async def test_live_order_manager_sber_buy_and_cancel_30s():
     """
-    Интеграционный тест: выставление и отмена лимитного ордера на покупку SBER через реальный QUIK.
-    ВНИМАНИЕ: тест реально отправляет заявку на биржу! Используйте только на тестовом/демо-счёте.
+    Интеграционный тест: выставление лимитного ордера на покупку 1 лота SBER по 230 и снятие его через 30 секунд.
+    ВНИМАНИЕ: тест реально отправляет заявку на биржу! Используйте только на тестовом/боевом счёте с осторожностью.
     Перед запуском укажите реальные значения ACCOUNT, portfolio_id, instrument_id.
     """
     # === Замените на ваши реальные значения ===
-    ACCOUNT = "L01-00000F00"         # Например, L01-00000F00
+    ACCOUNT = "ВАШ_СЧЕТ"         # Например, L01-00000F00
     PORTFOLIO_ID = 1             # ID портфеля в вашей БД
     INSTRUMENT_ID = 1            # ID инструмента SBER в вашей БД
     # =========================================
@@ -57,13 +57,25 @@ async def test_live_order_manager_sber_buy_and_cancel():
     }
 
     # Отправляем заявку
-    quik_id = await manager.place_limit_order(order_data, orm_order_id)
-    print(f"Order sent, QUIK ID: {quik_id}")
+    quik_num = await manager.place_limit_order(order_data, orm_order_id)
+    print(f"Order sent, QUIK ID: {quik_num}")
 
-    # Дадим время заявке появиться в QUIK
-    await asyncio.sleep(2)
+    # Ждём появления QUIK ID (order_num) в маппинге
+    async def wait_for_quik_id(timeout=10):
+        for _ in range(timeout * 10):
+            quik_id = manager._orm_to_quik.get(orm_order_id)
+            if quik_id:
+                return quik_id
+            await asyncio.sleep(0.1)
+        raise TimeoutError("QUIK ID не появился в течение таймаута")
 
-    # Снимаем заявку
+    quik_id = await wait_for_quik_id()
+    print(f"QUIK ID for cancel: {quik_id}")
+
+    # Ждём 30 секунд
+    await asyncio.sleep(30)
+
+    # Отменяем ордер
     await manager.cancel_order(orm_order_id)
     print("Order cancel requested.")
 
