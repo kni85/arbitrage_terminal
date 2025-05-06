@@ -300,15 +300,24 @@ class QuikConnector:
     # ------------------------------------------------------------------
     def _on_trade(self, event):
         from backend.core.order_manager import OrderManager
-        OrderManager._get_instance_for_connector(self).on_trade_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "trade"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_trade_event(payload)
 
     def _on_order(self, event):
         from backend.core.order_manager import OrderManager
-        OrderManager._get_instance_for_connector(self).on_order_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "order"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_order_event(payload)
 
     def _on_trans_reply(self, event):
         from backend.core.order_manager import OrderManager
-        OrderManager._get_instance_for_connector(self).on_trans_reply_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "trans_reply"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_trans_reply_event(payload)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
