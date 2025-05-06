@@ -99,36 +99,47 @@ class OrderManager:
         """
         trans_id = event.get("trans_id") or event.get("TRANS_ID")
         quik_num = event.get("order_num") or event.get("order_id")
-        if trans_id is not None and trans_id in self._trans_to_orm:
-            return self._trans_to_orm[trans_id]
         if quik_num is not None and quik_num in self._quik_to_orm:
             return self._quik_to_orm[quik_num]
+        if trans_id is not None and trans_id in self._trans_to_orm:
+            return self._trans_to_orm[trans_id]
         return None
 
-    def _on_order_event(self, event: dict) -> None:
+    def on_order_event(self, event: dict):
+        """
+        Если есть order_num и trans_id, связываем их.
+        Если ордер найден только по trans_id, обновляем его QUIK_ID.
+        """
         quik_num = event.get("order_id") or event.get("order_num")
         trans_id = event.get("trans_id") or event.get("TRANS_ID")
-        orm_order_id = self._find_orm_order_id(event)
+        orm_order_id = None
+        if quik_num is not None and quik_num in self._quik_to_orm:
+            orm_order_id = self._quik_to_orm[quik_num]
+        elif trans_id is not None and trans_id in self._trans_to_orm:
+            orm_order_id = self._trans_to_orm[trans_id]
+            # Если появился новый quik_num, связываем с ORM-ордером
+            if quik_num is not None and quik_num not in self._quik_to_orm:
+                self._quik_to_orm[quik_num] = orm_order_id
+                self._orm_to_quik[orm_order_id] = quik_num
+                asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
         if orm_order_id is None:
-            logger.warning(f"Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
+            logger.warning(f"[ORDER_EVENT] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
-        # Если появился новый quik_num, обновляем маппинг и ORM Order
-        if quik_num is not None and quik_num not in self._quik_to_orm:
-            self._quik_to_orm[quik_num] = orm_order_id
-            self._orm_to_quik[orm_order_id] = quik_num
-            # Обновляем quik_num в ORM Order
-            asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
         status = event.get("status")
         filled = event.get("filled")
         asyncio.create_task(self._update_order_status(orm_order_id, status, filled))
 
-    def on_order_event(self, event: dict):
-        self._on_order_event(event)
-
     def on_trade_event(self, event: dict):
+        """
+        Ищем по QUIK_ID, если нет — по trans_id.
+        """
         quik_num = event.get("order_num") or event.get("order_id")
         trans_id = event.get("trans_id") or event.get("TRANS_ID")
-        orm_order_id = self._find_orm_order_id(event)
+        orm_order_id = None
+        if quik_num is not None and quik_num in self._quik_to_orm:
+            orm_order_id = self._quik_to_orm[quik_num]
+        elif trans_id is not None and trans_id in self._trans_to_orm:
+            orm_order_id = self._trans_to_orm[trans_id]
         if orm_order_id is None:
             logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
@@ -149,13 +160,22 @@ class OrderManager:
         asyncio.create_task(update())
 
     def on_trans_reply_event(self, event: dict):
-        quik_num = event.get("order_num") or event.get("order_id")
+        """
+        Обработка события OnTransReply: ошибки, REJECTED, CANCELLED и др.
+        Если есть TRANS_ID, ищем ORM-ордер по нему.
+        Если есть ошибка — обновляем статус ордера.
+        """
         trans_id = event.get("trans_id") or event.get("TRANS_ID")
-        orm_order_id = self._find_orm_order_id(event)
+        quik_num = event.get("order_num") or event.get("order_id")
+        orm_order_id = None
+        if trans_id is not None and trans_id in self._trans_to_orm:
+            orm_order_id = self._trans_to_orm[trans_id]
+        elif quik_num is not None and quik_num in self._quik_to_orm:
+            orm_order_id = self._quik_to_orm[quik_num]
         if orm_order_id is None:
             logger.warning(f"[TRANS_REPLY] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
-        # Если появился новый quik_num, обновляем маппинг и ORM Order
+        # Если появился новый quik_num, связываем с ORM-ордером
         if quik_num is not None and quik_num not in self._quik_to_orm:
             self._quik_to_orm[quik_num] = orm_order_id
             self._orm_to_quik[orm_order_id] = quik_num
