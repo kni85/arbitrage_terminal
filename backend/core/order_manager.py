@@ -27,6 +27,8 @@ class OrderManager:
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
         self._quik_to_orm: Dict[int, int] = {}
         self._orm_to_quik: Dict[int, int] = {}
+        # Новый маппинг: trans_id -> orm_order_id
+        self._trans_to_orm: Dict[int, int] = {}
         # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
     @staticmethod
