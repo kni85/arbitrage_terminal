@@ -295,10 +295,12 @@ class QuikConnector:
 
     def _on_order(self, event):
         from backend.core.order_manager import OrderManager
+        print(f"[QUIK EVENT] OnOrder: {event}")
         OrderManager._get_instance_for_connector(self).on_order_event(event)
 
     def _on_trans_reply(self, event):
         from backend.core.order_manager import OrderManager
+        print(f"[QUIK EVENT] OnTransReply: {event}")
         OrderManager._get_instance_for_connector(self).on_trans_reply_event(event)
 
     # ------------------------------------------------------------------

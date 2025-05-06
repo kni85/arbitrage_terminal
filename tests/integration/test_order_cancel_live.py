@@ -41,7 +41,7 @@ async def test_live_order_manager_sber_buy_and_cancel_30s():
         session.add(order)
         await session.commit()
         orm_order_id = order.id
-        print(orm_order_id)
+        
 
     # Формируем данные для QUIK
     order_data = {
@@ -52,7 +52,7 @@ async def test_live_order_manager_sber_buy_and_cancel_30s():
         "OPERATION": "B",   # Покупка
         "PRICE": "275",
         "QUANTITY": "1",
-        "TRANS_ID": "2",  # Уникальный идентификатор транзакции
+        "TRANS_ID": "1",  # Уникальный идентификатор транзакции
         "CLIENT_CODE": "1360W2"
     # Добавьте CLIENT_CODE и др. если требуется вашим брокером
     }
