@@ -46,12 +46,20 @@ class OrderManager:
         strategy_id — id стратегии (если требуется связка)
         Возвращает QUIK ID (quik_num) или None.
         """
+        trans_id = order_data.get("TRANS_ID")
+        if trans_id is not None:
+            self._trans_to_orm[trans_id] = orm_order_id
+            # Сохраняем trans_id в ORM Order
+            async with AsyncSessionLocal() as session:
+                order = await session.get(Order, orm_order_id)
+                if order:
+                    order.trans_id = trans_id
+                    await session.commit()
         resp = await self._connector.place_limit_order(order_data)
         quik_num = resp.get("order_num") or resp.get("order_id")
         if quik_num is not None:
             self._quik_to_orm[quik_num] = orm_order_id
             self._orm_to_quik[orm_order_id] = quik_num
-            # Обновляем quik_num и strategy_id в БД
             await self._update_order_quik_num(orm_order_id, quik_num, strategy_id)
         return quik_num
 
@@ -85,40 +93,51 @@ class OrderManager:
                     order.leaves_qty = max(order.qty - order.filled, 0)
                 await session.commit()
 
+    def _find_orm_order_id(self, event: dict) -> Optional[int]:
+        """
+        Универсальный поиск ORM Order ID по event: сначала по trans_id, потом по quik_num.
+        """
+        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        quik_num = event.get("order_num") or event.get("order_id")
+        if trans_id is not None and trans_id in self._trans_to_orm:
+            return self._trans_to_orm[trans_id]
+        if quik_num is not None and quik_num in self._quik_to_orm:
+            return self._quik_to_orm[quik_num]
+        return None
+
     def _on_order_event(self, event: dict) -> None:
-        """
-        Обработчик событий по заявкам от QuikConnector.
-        event — dict с полями order_id (QUIK), status, filled и др.
-        """
         quik_num = event.get("order_id") or event.get("order_num")
+        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        orm_order_id = self._find_orm_order_id(event)
+        if orm_order_id is None:
+            logger.warning(f"Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
+            return
+        # Если появился новый quik_num, обновляем маппинг и ORM Order
+        if quik_num is not None and quik_num not in self._quik_to_orm:
+            self._quik_to_orm[quik_num] = orm_order_id
+            self._orm_to_quik[orm_order_id] = quik_num
+            # Обновляем quik_num в ORM Order
+            asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
         status = event.get("status")
         filled = event.get("filled")
-        orm_order_id = self._quik_to_orm.get(quik_num)
-        if orm_order_id is None:
-            logger.warning(f"Не найден ORM Order для QUIK ID {quik_num}")
-            return
-        # Асинхронно обновляем статус в БД
         asyncio.create_task(self._update_order_status(orm_order_id, status, filled))
 
     def on_order_event(self, event: dict):
         self._on_order_event(event)
 
     def on_trade_event(self, event: dict):
-        """
-        Обработка события по сделке (OnTrade/OnAllTrade): обновление filled, leaves_qty, статуса ордера.
-        event — dict с полями order_num (QUIK), qty (исполнено), ...
-        """
         quik_num = event.get("order_num") or event.get("order_id")
-        qty = event.get("qty")
-        orm_order_id = self._quik_to_orm.get(quik_num)
+        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        orm_order_id = self._find_orm_order_id(event)
         if orm_order_id is None:
-            logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num}")
+            logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
         async def update():
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
                 if order:
-                    order.filled = (order.filled or 0) + (qty or 0)
+                    qty = event.get("qty") or 0
+                    order.filled = (order.filled or 0) + qty
                     order.leaves_qty = max(order.qty - order.filled, 0)
                     # PARTIAL или FILLED
                     if order.filled >= order.qty:
@@ -130,18 +149,20 @@ class OrderManager:
         asyncio.create_task(update())
 
     def on_trans_reply_event(self, event: dict):
-        """
-        Обработка события OnTransReply: ошибки, REJECTED, CANCELLED и др.
-        event — dict с полями order_num (QUIK), status, result, error_code, error_msg, ...
-        """
         quik_num = event.get("order_num") or event.get("order_id")
+        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        orm_order_id = self._find_orm_order_id(event)
+        if orm_order_id is None:
+            logger.warning(f"[TRANS_REPLY] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
+            return
+        # Если появился новый quik_num, обновляем маппинг и ORM Order
+        if quik_num is not None and quik_num not in self._quik_to_orm:
+            self._quik_to_orm[quik_num] = orm_order_id
+            self._orm_to_quik[orm_order_id] = quik_num
+            asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
         status = event.get("status")
         error_code = event.get("error_code")
         error_msg = event.get("error_msg")
-        orm_order_id = self._quik_to_orm.get(quik_num)
-        if orm_order_id is None:
-            logger.warning(f"[TRANS_REPLY] Не найден ORM Order для QUIK ID {quik_num}")
-            return
         async def update():
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
