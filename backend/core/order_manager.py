@@ -22,6 +22,14 @@ logger = logging.getLogger(__name__)
 class OrderManager:
     """Менеджер ордеров: выставление, отмена, отслеживание статусов."""
 
+    @staticmethod
+    def _to_int(value):
+        """Пробует привести значение к int, иначе возвращает как есть."""
+        try:
+            return int(value) if value is not None else None
+        except (ValueError, TypeError):
+            return value
+
     def __init__(self):
         self._connector = QuikConnector()
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
@@ -116,8 +124,8 @@ class OrderManager:
         Если есть order_num и trans_id, связываем их.
         Если ордер найден только по trans_id, обновляем его QUIK_ID.
         """
-        quik_num = event.get("order_id") or event.get("order_num")
-        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        quik_num = self._to_int(event.get("order_id") or event.get("order_num"))
+        trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
         orm_order_id = None
         if quik_num is not None and quik_num in self._quik_to_orm:
             orm_order_id = self._quik_to_orm[quik_num]
@@ -139,8 +147,8 @@ class OrderManager:
         """
         Ищем по QUIK_ID, если нет — по trans_id.
         """
-        quik_num = event.get("order_num") or event.get("order_id")
-        trans_id = event.get("trans_id") or event.get("TRANS_ID")
+        quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
+        trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
         orm_order_id = None
         if quik_num is not None and quik_num in self._quik_to_orm:
             orm_order_id = self._quik_to_orm[quik_num]
@@ -171,8 +179,8 @@ class OrderManager:
         Если есть TRANS_ID, ищем ORM-ордер по нему.
         Если есть ошибка — обновляем статус ордера.
         """
-        trans_id = event.get("trans_id") or event.get("TRANS_ID")
-        quik_num = event.get("order_num") or event.get("order_id")
+        trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
+        quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
         orm_order_id = None
         if trans_id is not None and trans_id in self._trans_to_orm:
             orm_order_id = self._trans_to_orm[trans_id]
