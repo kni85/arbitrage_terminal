@@ -150,11 +150,12 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         Index("ix_orders_portfolio_status", "portfolio_id", "status"),
+        Index("ix_orders_trans_id", "trans_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)      # внутренний id
     quik_num: Mapped[int | None] = mapped_column(Integer)                      # № заявки в QUIK
-
+    trans_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="ID транзакции QUIK (TRANS_ID)")
     portfolio_id:  Mapped[int]  = mapped_column(ForeignKey("portfolio_configs.id"), nullable=False)
     strategy_id:   Mapped[int | None] = mapped_column(Integer, nullable=True, comment="ID стратегии (если нужно)")
     instrument_id: Mapped[int]  = mapped_column(ForeignKey("instruments.id"), nullable=False)
