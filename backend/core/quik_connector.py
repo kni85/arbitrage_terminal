@@ -114,6 +114,15 @@ class QuikConnector:
             callbacks_port=callbacks_port,
         )
 
+        # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
+        # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
+        # сразу после их прихода из QUIK.
+        # Если пользователь уже настроил свои обработчики, их можно обернуть, но
+        # для текущей цели достаточно прямого назначения.
+        self._qp.on_order = self._on_order  # type: ignore[attr-defined]
+        self._qp.on_trade = self._on_trade  # type: ignore[attr-defined]
+        self._qp.on_trans_reply = self._on_trans_reply  # type: ignore[attr-defined]
+
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
         self._order_callbacks: Dict[str, list[OrderCallback]] = {}
