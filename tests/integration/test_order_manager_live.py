@@ -20,7 +20,7 @@ async def test_live_order_manager_sber_buy_and_cancel_30s():
     Перед запуском укажите реальные значения ACCOUNT, portfolio_id, instrument_id.
     """
     # === Замените на ваши реальные значения ===
-    ACCOUNT = "ВАШ_СЧЕТ"         # Например, L01-00000F00
+    ACCOUNT = "L01-00000F00"         # Например, L01-00000F00
     PORTFOLIO_ID = 1             # ID портфеля в вашей БД
     INSTRUMENT_ID = 1            # ID инструмента SBER в вашей БД
     # =========================================
