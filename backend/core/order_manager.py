@@ -32,6 +32,9 @@ class OrderManager:
 
     def __init__(self):
         self._connector = QuikConnector()
+        # Регистрируем себя в QuikConnector, чтобы callbacks шли в этот же экземпляр
+        if not hasattr(self._connector, "_order_manager_instance"):
+            self._connector._order_manager_instance = self  # type: ignore[attr-defined]
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
         self._quik_to_orm: Dict[int, int] = {}
         self._orm_to_quik: Dict[int, int] = {}
@@ -41,10 +44,8 @@ class OrderManager:
 
     @staticmethod
     def _get_instance_for_connector(connector):
-        # singleton для интеграции с QuikConnector
-        if not hasattr(connector, "_order_manager_instance"):
-            connector._order_manager_instance = OrderManager()
-        return connector._order_manager_instance
+        # Возвращаем уже привязанный экземпляр
+        return connector._order_manager_instance  # type: ignore[attr-defined]
 
     async def place_limit_order(self, order_data: dict, orm_order_id: int, strategy_id: int = None) -> Optional[int]:
         """
