@@ -114,6 +114,15 @@ class QuikConnector:
             callbacks_port=callbacks_port,
         )
 
+        # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
+        # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
+        # сразу после их прихода из QUIK.
+        # Если пользователь уже настроил свои обработчики, их можно обернуть, но
+        # для текущей цели достаточно прямого назначения.
+        self._qp.on_order = self._on_order  # type: ignore[attr-defined]
+        self._qp.on_trade = self._on_trade  # type: ignore[attr-defined]
+        self._qp.on_trans_reply = self._on_trans_reply  # type: ignore[attr-defined]
+
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
         self._order_callbacks: Dict[str, list[OrderCallback]] = {}
@@ -291,17 +300,24 @@ class QuikConnector:
     # ------------------------------------------------------------------
     def _on_trade(self, event):
         from backend.core.order_manager import OrderManager
-        OrderManager._get_instance_for_connector(self).on_trade_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "trade"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_trade_event(payload)
 
     def _on_order(self, event):
         from backend.core.order_manager import OrderManager
-        print(f"[QUIK EVENT] OnOrder: {event}")
-        OrderManager._get_instance_for_connector(self).on_order_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "order"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_order_event(payload)
 
     def _on_trans_reply(self, event):
         from backend.core.order_manager import OrderManager
-        print(f"[QUIK EVENT] OnTransReply: {event}")
-        OrderManager._get_instance_for_connector(self).on_trans_reply_event(event)
+        payload = event.get("data", event)
+        payload["type"] = "trans_reply"
+        payload["cmd"] = event.get("cmd")
+        OrderManager._get_instance_for_connector(self).on_trans_reply_event(payload)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
