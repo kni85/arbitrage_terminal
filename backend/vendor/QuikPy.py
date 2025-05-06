@@ -887,7 +887,7 @@ class QuikPy:
                 except JSONDecodeError:  # Если разобрать не смогли (пришла не вся строка)
                     fragments.append(data)  # то, что не разобрали ставим в список фрагментов
                     break  # т.к. неполной может быть только последняя строка, то выходим из разбора функций обратного вызова
-                print(f"[QUIK CALLBACK] {data.get('cmd')}: {data}")
+                # print(f"[QUIK CALLBACK] {data.get('cmd')}: {data}")
                 # Разбираем функцию обратного вызова QUIK LUA
                 if data['cmd'] == 'OnFirm':  # 1. Новая фирма
                     self.on_firm(data)
