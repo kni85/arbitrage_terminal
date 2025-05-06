@@ -46,7 +46,12 @@ class OrderManager:
         strategy_id — id стратегии (если требуется связка)
         Возвращает QUIK ID (quik_num) или None.
         """
-        trans_id = order_data.get("TRANS_ID")
+        trans_id_raw = order_data.get("TRANS_ID")
+        # Приводим trans_id к int, чтобы тип совпадал с тем, что приходит в событиях QUIK
+        try:
+            trans_id = int(trans_id_raw) if trans_id_raw is not None else None
+        except ValueError:
+            trans_id = None
         if trans_id is not None:
             self._trans_to_orm[trans_id] = orm_order_id
             # Сохраняем trans_id в ORM Order
@@ -56,7 +61,8 @@ class OrderManager:
                     order.trans_id = trans_id
                     await session.commit()
         resp = await self._connector.place_limit_order(order_data)
-        quik_num = resp.get("order_num") or resp.get("order_id")
+        quik_num_raw = resp.get("order_num") or resp.get("order_id")
+        quik_num = int(quik_num_raw) if quik_num_raw is not None else None
         if quik_num is not None:
             self._quik_to_orm[quik_num] = orm_order_id
             self._orm_to_quik[orm_order_id] = quik_num
