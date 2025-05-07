@@ -91,12 +91,19 @@ class OrderManager:
         return quik_num
 
     async def cancel_order(self, orm_order_id: int) -> None:
-        """Отменяет ордер по внутреннему id (через маппинг на QUIK ID)."""
+        """Отменяет ордер по внутреннему id (через маппинг на QUIK ID).
+
+        Создаём новый TRANS_ID для операции отмены, чтобы можно было отследить
+        подтверждение OnTransReply даже если в событии не придёт order_num.
+        """
         quik_num = self._orm_to_quik.get(orm_order_id)
         if quik_num is None:
             logger.warning(f"Нет QUIK ID для ORM Order {orm_order_id}")
             return
-        await self._connector.cancel_order(str(quik_num))
+        import time, random
+        trans_id = int(time.time() * 1000) + random.randint(0, 999)
+        self._register_trans_mapping(trans_id, orm_order_id)
+        await self._connector.cancel_order(str(quik_num), trans_id=trans_id)
 
     async def _update_order_quik_num(self, orm_order_id: int, quik_num: int, strategy_id: int = None) -> None:
         """Обновляет поле quik_num и strategy_id в ORM Order."""
