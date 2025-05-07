@@ -45,6 +45,8 @@ class OrderManager:
         self._orm_to_quik: Dict[int, int] = {}
         # Новый маппинг: trans_id -> orm_order_id
         self._trans_to_orm: Dict[Any, int] = {}
+        # Сохраняем CLASSCODE & SECCODE для каждого ORM-ордера
+        self._orm_to_contract: Dict[int, tuple[str, str]] = {}
         # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
     @staticmethod
@@ -83,6 +85,12 @@ class OrderManager:
             trans_id = None
         if trans_id is not None:
             self._register_trans_mapping(trans_id, orm_order_id)
+        # Сохраняем контракт
+        class_code = order_data.get("CLASSCODE") or order_data.get("CLASS_CODE")
+        sec_code = order_data.get("SECCODE") or order_data.get("SEC_CODE")
+        if class_code and sec_code:
+            self._orm_to_contract[orm_order_id] = (class_code, sec_code)
+
         resp = await self._connector.place_limit_order(order_data)
         quik_num_raw = resp.get("order_num") or resp.get("order_id")
         quik_num = int(quik_num_raw) if quik_num_raw is not None else None
@@ -109,11 +117,16 @@ class OrderManager:
                 logger.error("Order %s not found while cancelling", orm_order_id)
                 return
             instrument = await session.get(Instrument, order.instrument_id)
-            if not instrument:
-                logger.error("Instrument %s not found while cancelling order", order.instrument_id)
-                return
-            class_code = instrument.board  # BOARD хранит CLASSCODE
-            sec_code = instrument.ticker
+            if instrument:
+                class_code = instrument.board
+                sec_code = instrument.ticker
+            else:
+                # Fallback: используем сохранённый контракт
+                contract = self._orm_to_contract.get(orm_order_id)
+                if not contract:
+                    logger.error("Не удалось определить CLASS/SECCODE для ордера %s", orm_order_id)
+                    return
+                class_code, sec_code = contract
 
         import time, random
         trans_id = int(time.time() * 1000) + random.randint(0, 999)
