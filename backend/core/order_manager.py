@@ -139,7 +139,6 @@ class OrderManager:
             trans_id=trans_id,
         )
         logger.info(f"Cancel order response: {resp}")
-        print("### KILL_ORDER resp:", resp)
         # Обновим статус локально – если QUIK подтвердил приём транзакции (resp['data'] == True)
         if resp.get("data") in (True, 1, "1", "True"):
             # status изменится на CANCELLED; filled не трогаем

@@ -320,7 +320,7 @@ class QuikConnector:
         OrderManager._get_instance_for_connector(self).on_trade_event(payload)
 
     def _on_order(self, event):
-        print("### OnOrder RAW:", event)
+        # debug logging removed
         from backend.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "order"
@@ -328,7 +328,7 @@ class QuikConnector:
         OrderManager._get_instance_for_connector(self).on_order_event(payload)
 
     def _on_trans_reply(self, event):
-        print("### OnTransReply RAW:", event)
+        # debug logging removed
         from backend.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trans_reply"
