@@ -37,7 +37,7 @@ def test_strategy_status_serialization():
         position_price=5.67,
         pnl=123.45,
     )
-    dumped = status.dict()
+    dumped = status.model_dump()
     assert dumped["running"] is True
     assert dumped["pnl"] == 123.45
 

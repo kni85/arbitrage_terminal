@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 # ---------------------------------------------------------------------------
 # Общие helper-классы
@@ -58,22 +58,20 @@ class StrategyConfig(BaseModel):
     mode: str = Field("shooter", description="Режим: shooter | market_maker")
     active: bool = Field(True, description="Флаг активности стратегии")
 
-    class Config:
-        orm_mode = True
-        schema_extra = {
-            "example": {
-                "name": "Pair SBER vs GAZP",
-                "instrument_leg1": "TQBR.SBER",
-                "instrument_leg2": "TQBR.GAZP",
-                "price_ratio1": 1,
-                "price_ratio2": 1,
-                "qty_ratio": 1,
-                "threshold_long": -0.5,
-                "threshold_short": 0.6,
-                "mode": "market_maker",
-                "active": True,
-            }
+    model_config = ConfigDict(from_attributes=True, json_schema_extra={
+        "example": {
+            "name": "Pair SBER vs GAZP",
+            "instrument_leg1": "TQBR.SBER",
+            "instrument_leg2": "TQBR.GAZP",
+            "price_ratio1": 1,
+            "price_ratio2": 1,
+            "qty_ratio": 1,
+            "threshold_long": -0.5,
+            "threshold_short": 0.6,
+            "mode": "market_maker",
+            "active": True,
         }
+    })
 
 
 class StrategyStatus(BaseModel):
@@ -89,8 +87,7 @@ class StrategyStatus(BaseModel):
     position_price: Optional[float] = None
     pnl: Optional[float] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------------------------------------------------------
@@ -109,14 +106,13 @@ class OrderSchema(BaseModel):
     price: float
     qty: int
     filled: int
-    leaves_qty: Optional[int]
+    leaves_qty: Optional[int] = Field(None)
     status: OrderStatusEnum
 
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TradeSchema(BaseModel):
@@ -130,5 +126,4 @@ class TradeSchema(BaseModel):
     qty: int
     side: str
 
-    class Config:
-        orm_mode = True 
+    model_config = ConfigDict(from_attributes=True) 
