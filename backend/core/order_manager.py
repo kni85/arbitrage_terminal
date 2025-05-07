@@ -32,20 +32,34 @@ class OrderManager:
 
     def __init__(self):
         self._connector = QuikConnector()
-        # Регистрируем себя в QuikConnector, чтобы callbacks шли в этот же экземпляр
-        if not hasattr(self._connector, "_order_manager_instance"):
-            self._connector._order_manager_instance = self  # type: ignore[attr-defined]
+        # Регистрируем себя в QuikConnector (перезаписываем), чтобы callbacks шли именно в текущий экземпляр
+        self._connector._order_manager_instance = self  # type: ignore[attr-defined]
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
         self._quik_to_orm: Dict[int, int] = {}
         self._orm_to_quik: Dict[int, int] = {}
         # Новый маппинг: trans_id -> orm_order_id
-        self._trans_to_orm: Dict[int, int] = {}
+        self._trans_to_orm: Dict[Any, int] = {}
         # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
     @staticmethod
     def _get_instance_for_connector(connector):
         # Возвращаем уже привязанный экземпляр
         return connector._order_manager_instance  # type: ignore[attr-defined]
+
+    def _register_trans_mapping(self, trans_id: Any, orm_order_id: int):
+        """Сохраняет привязку trans_id → orm_order_id для int и str форматов."""
+        if trans_id is None:
+            return
+        self._trans_to_orm[trans_id] = orm_order_id
+        self._trans_to_orm[str(trans_id)] = orm_order_id
+
+    def _register_quik_mapping(self, quik_num: Any, orm_order_id: int):
+        """Сохраняет привязку quik_num → orm_order_id для int и str форматов."""
+        if quik_num is None:
+            return
+        self._quik_to_orm[quik_num] = orm_order_id
+        self._quik_to_orm[str(quik_num)] = orm_order_id
+        self._orm_to_quik[orm_order_id] = quik_num
 
     async def place_limit_order(self, order_data: dict, orm_order_id: int, strategy_id: int = None) -> Optional[int]:
         """
@@ -62,19 +76,12 @@ class OrderManager:
         except ValueError:
             trans_id = None
         if trans_id is not None:
-            self._trans_to_orm[trans_id] = orm_order_id
-            # Сохраняем trans_id в ORM Order
-            async with AsyncSessionLocal() as session:
-                order = await session.get(Order, orm_order_id)
-                if order:
-                    order.trans_id = trans_id
-                    await session.commit()
+            self._register_trans_mapping(trans_id, orm_order_id)
         resp = await self._connector.place_limit_order(order_data)
         quik_num_raw = resp.get("order_num") or resp.get("order_id")
         quik_num = int(quik_num_raw) if quik_num_raw is not None else None
         if quik_num is not None:
-            self._quik_to_orm[quik_num] = orm_order_id
-            self._orm_to_quik[orm_order_id] = quik_num
+            self._register_quik_mapping(quik_num, orm_order_id)
             await self._update_order_quik_num(orm_order_id, quik_num, strategy_id)
         return quik_num
 
@@ -134,9 +141,7 @@ class OrderManager:
             orm_order_id = self._trans_to_orm[trans_id]
             # Если появился новый quik_num, связываем с ORM-ордером
             if quik_num is not None and quik_num not in self._quik_to_orm:
-                self._quik_to_orm[quik_num] = orm_order_id
-                self._orm_to_quik[orm_order_id] = quik_num
-                asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
+                self._register_quik_mapping(quik_num, orm_order_id)
         if orm_order_id is None:
             logger.warning(f"[ORDER_EVENT] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
@@ -192,9 +197,7 @@ class OrderManager:
             return
         # Если появился новый quik_num, связываем с ORM-ордером
         if quik_num is not None and quik_num not in self._quik_to_orm:
-            self._quik_to_orm[quik_num] = orm_order_id
-            self._orm_to_quik[orm_order_id] = quik_num
-            asyncio.create_task(self._update_order_quik_num(orm_order_id, quik_num))
+            self._register_quik_mapping(quik_num, orm_order_id)
         status = event.get("status")
         error_code = event.get("error_code")
         error_msg = event.get("error_msg")
