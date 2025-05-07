@@ -43,7 +43,7 @@ def test_strategy_status_serialization():
 
 
 def test_order_schema_enum_fields():
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     order = OrderSchema(
         id=1,
         quik_num=123,
@@ -62,7 +62,7 @@ def test_order_schema_enum_fields():
 
 
 def test_trade_schema_creation():
-    ts = datetime.datetime.utcnow()
+    ts = datetime.datetime.now(datetime.UTC)
     trade = TradeSchema(
         id=1,
         instrument_id=1,
