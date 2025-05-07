@@ -318,17 +318,18 @@ class OrderManager:
         # Если появился новый quik_num, связываем с ORM-ордером
         if quik_num is not None and quik_num not in self._quik_to_orm:
             self._register_quik_mapping(quik_num, orm_order_id)
-        status = event.get("status")
+        status_raw = event.get("status")
+        status_norm = str(status_raw).upper() if status_raw is not None else ""
         error_code = event.get("error_code")
         error_msg = event.get("error_msg")
         async def update():
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
                 if order:
-                    if error_code or (status and status.upper() == "REJECTED"):
+                    if (error_code not in (0, None, "0", "")) or status_norm == "REJECTED":
                         order.status = OrderStatus.REJECTED
                         logger.error(f"[TRANS_REPLY] Order {order.id} REJECTED: {error_code} {error_msg}")
-                    elif status and status.upper() == "CANCELLED":
+                    elif status_norm == "CANCELLED":
                         order.status = OrderStatus.CANCELLED
                         logger.info(f"[TRANS_REPLY] Order {order.id} CANCELLED")
                     await session.commit()

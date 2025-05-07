@@ -228,12 +228,43 @@ class QuikConnector:
     # Торговые операции (вызовы через ThreadPoolExecutor)
     # ------------------------------------------------------------------
 
-    async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
+    async def _send_transaction(self, tr: dict[str, Any]) -> dict[str, Any]:
+        """Универсальный вызов SendTransaction/Send_Transaction c fallback аргументов.
+
+        Проблема: в разных версиях QuikPy доступна либо `send_transaction(self, transaction)`,
+        либо `SendTransaction(self, transaction)`, а иногда – свободная функция, которая
+        ожидает **именованный** аргумент `transaction`. Этот хелпер пытается вызвать все варианты
+        (positional + keyword) до первого успешного ответа.
+        """
         loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction")
+
+        def _try(func, *f_args, **f_kwargs):  # noqa: ANN001
+            try:
+                return loop.run_in_executor(None, func, *f_args, **f_kwargs)
+            except TypeError:
+                return None
+
+        # Перебираем возможные имена метода
+        for name in ("send_transaction", "sendTransaction", "SendTransaction"):
+            func = getattr(self._qp, name, None)
+            if func is None:
+                continue
+            # 1. Пытаемся передать позиционный аргумент
+            fut = _try(func, tr)
+            if fut:
+                return await fut
+            # 2. Пробуем именованный параметр
+            fut = _try(func, transaction=tr)
+            if fut:
+                return await fut
+
+        # Если ни один вариант не подошёл, генерируем исключение
+        raise AttributeError("Не найден совместимый метод send_transaction в QuikPy")
+
+    async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
         print(f"===> Отправка заявки: {tr}")
         try:
-            result = await loop.run_in_executor(None, method, tr)
+            result = await self._send_transaction(tr)
             print(f"===> Ответ QUIK: {result}")
             logger.info(f"Ответ QUIK на заявку: {result}")
             return result
@@ -248,10 +279,10 @@ class QuikConnector:
             return {"result": -1, "message": str(exc)}
 
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]:
-        loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction")
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return await loop.run_in_executor(None, method, tr)
+            result = await self._send_transaction(tr)
+            return result
         except Exception as exc:
             logger.exception("Ошибка при отправке рыночного ордера: %s", exc)
             error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
@@ -277,10 +308,10 @@ class QuikConnector:
         }
         if trans_id is not None:
             tr["TRANS_ID"] = str(trans_id)
-        loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction")
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return await loop.run_in_executor(None, method, tr)
+            result = await self._send_transaction(tr)
+            return result
         except Exception as exc:
             logger.exception("Ошибка при отмене ордера: %s", exc)
             error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
@@ -314,11 +345,10 @@ class QuikConnector:
             tr["QUANTITY"] = str(qty)
         if trans_id is not None:
             tr["TRANS_ID"] = str(trans_id)
-
-        loop = asyncio.get_running_loop()
-        method = getattr(self._qp, "send_transaction")
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return await loop.run_in_executor(None, method, tr)
+            result = await self._send_transaction(tr)
+            return result
         except Exception as exc:
             logger.exception("Ошибка при изменении ордера: %s", exc)
             error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
