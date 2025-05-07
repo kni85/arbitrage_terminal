@@ -128,7 +128,7 @@ class OrderManager:
         # Обновим статус локально – если QUIK подтвердил приём транзакции (resp['data'] == True)
         if resp.get("data") in (True, 1, "1", "True"):
             # status изменится на CANCELLED; filled не трогаем
-            self._schedule(self._update_order_status(orm_order_id, OrderStatus.CANCELLED))
+            await self._update_order_status(orm_order_id, OrderStatus.CANCELLED)
 
     async def _update_order_quik_num(self, orm_order_id: int, quik_num: int, strategy_id: int = None) -> None:
         """Обновляет поле quik_num и strategy_id в ORM Order."""

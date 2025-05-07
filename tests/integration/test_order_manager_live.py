@@ -52,7 +52,7 @@ async def test_live_order_manager_sber_buy_and_cancel_30s():
         "OPERATION": "B",   # Покупка
         "PRICE": "278",
         "QUANTITY": "1",
-        "TRANS_ID": "5",  # Уникальный идентификатор транзакции
+        "TRANS_ID": "6",  # Уникальный идентификатор транзакции
         "CLIENT_CODE": "1360W2"
     # Добавьте CLIENT_CODE и др. если требуется вашим брокером
     }
