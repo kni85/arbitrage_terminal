@@ -66,6 +66,13 @@ except ImportError as exc:  # pragma: no cover – офлайн‑режим
         def unsubscribe_level2_quotes(self, class_code: str, sec_code: str):
             logger.info("DummyQuikPy: unsubscribe L2 %s %s", class_code, sec_code)
 
+        # --- Подписки на сделки (trades) ---
+        def subscribe_trades(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: subscribe trades %s %s", class_code, sec_code)
+
+        def unsubscribe_trades(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: unsubscribe trades %s %s", class_code, sec_code)
+
         # --- Торговля ----------------------------------------------------
         def send_transaction(self, tr: dict[str, Any]):
             print(f"!!! DummyQuikPy: send_transaction {tr}")
@@ -186,7 +193,10 @@ class QuikConnector:
         key = f"{class_code}.{sec_code}"
         self._trade_callbacks.setdefault(key, []).append(cb)
         if len(self._trade_callbacks[key]) == 1:
-            self._qp.subscribe_trades(class_code, sec_code)
+            try:
+                self._call("subscribe_trades", "SubscribeTrades", "subscribeTrades", class_code=class_code, sec_code=sec_code)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("subscribe_trades fallback failed: %s", exc)
             logger.info("Subscribed trades %s", key)
 
     def unsubscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
@@ -197,7 +207,10 @@ class QuikConnector:
         if cb in callbacks:
             callbacks.remove(cb)
         if not callbacks:
-            self._qp.unsubscribe_trades(class_code, sec_code)
+            try:
+                self._call("unsubscribe_trades", "UnsubscribeTrades", "unsubscribeTrades", class_code=class_code, sec_code=sec_code)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("unsubscribe_trades fallback failed: %s", exc)
             del self._trade_callbacks[key]
             logger.info("Unsubscribed trades %s", key)
 
@@ -270,6 +283,44 @@ class QuikConnector:
             return await loop.run_in_executor(None, method, tr)
         except Exception as exc:
             logger.exception("Ошибка при отмене ордера: %s", exc)
+            error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.warning("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
+
+    async def modify_order(
+        self,
+        order_id: str,
+        class_code: str,
+        sec_code: str,
+        price: float | int,
+        qty: int | None = None,
+        trans_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Отправляет транзакцию изменения параметров заявки (MOVE_ORDERS).
+
+        В QUIK PRICE и QUANTITY должны быть строками. Изменяем только указанные параметры.
+        """
+        tr: Dict[str, Any] = {
+            "ACTION": "MOVE_ORDERS",
+            "CLASSCODE": class_code,
+            "SECCODE": sec_code,
+            "ORDER_KEY": order_id,
+            "PRICE": str(price),
+        }
+        if qty is not None:
+            tr["QUANTITY"] = str(qty)
+        if trans_id is not None:
+            tr["TRANS_ID"] = str(trans_id)
+
+        loop = asyncio.get_running_loop()
+        method = getattr(self._qp, "send_transaction")
+        try:
+            return await loop.run_in_executor(None, method, tr)
+        except Exception as exc:
+            logger.exception("Ошибка при изменении ордера: %s", exc)
             error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
             try:
                 self._event_queue.put_nowait(error_event)
