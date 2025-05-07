@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from .quik_connector import QuikConnector
 from ..db.database import AsyncSessionLocal
 from ..db.models import Order, OrderStatus
+from ..db.models import Instrument
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +101,29 @@ class OrderManager:
         if quik_num is None:
             logger.warning(f"Нет QUIK ID для ORM Order {orm_order_id}")
             return
+
+        # Получаем CLASSCODE / SECCODE из ORM
+        async with AsyncSessionLocal() as session:
+            order = await session.get(Order, orm_order_id)
+            if not order:
+                logger.error("Order %s not found while cancelling", orm_order_id)
+                return
+            instrument = await session.get(Instrument, order.instrument_id)
+            if not instrument:
+                logger.error("Instrument %s not found while cancelling order", order.instrument_id)
+                return
+            class_code = instrument.board  # BOARD хранит CLASSCODE
+            sec_code = instrument.ticker
+
         import time, random
         trans_id = int(time.time() * 1000) + random.randint(0, 999)
         self._register_trans_mapping(trans_id, orm_order_id)
-        resp = await self._connector.cancel_order(str(quik_num), trans_id=trans_id)
+        resp = await self._connector.cancel_order(
+            str(quik_num),
+            class_code,
+            sec_code,
+            trans_id=trans_id,
+        )
         logger.info(f"Cancel order response: {resp}")
         # Обновим статус локально – если QUIK подтвердил приём транзакции (resp['data'] == True)
         if resp.get("data") in (True, 1, "1", "True"):

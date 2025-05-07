@@ -248,8 +248,20 @@ class QuikConnector:
                 logger.warning("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
-    async def cancel_order(self, order_id: str, trans_id: int | None = None) -> dict[str, Any]:
-        tr = {"ACTION": "KILL_ORDER", "ORDER_KEY": order_id}
+    async def cancel_order(
+        self,
+        order_id: str,
+        class_code: str,
+        sec_code: str,
+        trans_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Отправляет транзакцию отмены заявки (KILL_ORDER)."""
+        tr = {
+            "ACTION": "KILL_ORDER",
+            "CLASSCODE": class_code,
+            "SECCODE": sec_code,
+            "ORDER_KEY": order_id,
+        }
         if trans_id is not None:
             tr["TRANS_ID"] = str(trans_id)
         loop = asyncio.get_running_loop()
