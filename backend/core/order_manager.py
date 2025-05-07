@@ -128,8 +128,9 @@ class OrderManager:
                     return
                 class_code, sec_code = contract
 
-        import time, random
-        trans_id = int(time.time() * 1000) + random.randint(0, 999)
+        import random
+        # TRANS_ID должен быть положительным 32-битным int (≤ 2_147_483_647)
+        trans_id = random.randint(1, 2_000_000_000)
         self._register_trans_mapping(trans_id, orm_order_id)
         resp = await self._connector.cancel_order(
             str(quik_num),
