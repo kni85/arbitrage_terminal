@@ -50,9 +50,9 @@ async def test_live_order_manager_sber_buy_and_cancel_30s():
         "SECCODE": "SBER",
         "ACCOUNT": ACCOUNT,   # Ваш торговый счёт
         "OPERATION": "B",   # Покупка
-        "PRICE": "277",
+        "PRICE": "278",
         "QUANTITY": "1",
-        "TRANS_ID": "4",  # Уникальный идентификатор транзакции
+        "TRANS_ID": "5",  # Уникальный идентификатор транзакции
         "CLIENT_CODE": "1360W2"
     # Добавьте CLIENT_CODE и др. если требуется вашим брокером
     }

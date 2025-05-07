@@ -34,6 +34,11 @@ class OrderManager:
         self._connector = QuikConnector()
         # Регистрируем себя в QuikConnector (перезаписываем), чтобы callbacks шли именно в текущий экземпляр
         self._connector._order_manager_instance = self  # type: ignore[attr-defined]
+        # Сохраняем текущий event-loop (нужен для вызовов из CallbackThread)
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         # Маппинг QUIK ID (quik_num) ↔ id ORM Order
         self._quik_to_orm: Dict[int, int] = {}
         self._orm_to_quik: Dict[int, int] = {}
@@ -147,7 +152,7 @@ class OrderManager:
             return
         status = event.get("status")
         filled = event.get("filled")
-        asyncio.create_task(self._update_order_status(orm_order_id, status, filled))
+        self._schedule(self._update_order_status(orm_order_id, status, filled))
 
     def on_trade_event(self, event: dict):
         """
@@ -177,7 +182,7 @@ class OrderManager:
                         order.status = OrderStatus.PARTIAL
                     await session.commit()
                     logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, leaves_qty={order.leaves_qty}, status={order.status}")
-        asyncio.create_task(update())
+        self._schedule(update())
 
     def on_trans_reply_event(self, event: dict):
         """
@@ -212,4 +217,21 @@ class OrderManager:
                         order.status = OrderStatus.CANCELLED
                         logger.info(f"[TRANS_REPLY] Order {order.id} CANCELLED")
                     await session.commit()
-        asyncio.create_task(update()) 
+        self._schedule(update())
+
+    def _schedule(self, coro):
+        """Безопасно запускает coroutine из любого потока."""
+        try:
+            # Если уже внутри работающего цикла
+            loop = asyncio.get_running_loop()
+            return loop.create_task(coro)
+        except RuntimeError:
+            # Мы в другом потоке; используем сохранённый loop
+            if self._loop and self._loop.is_running():
+                return asyncio.run_coroutine_threadsafe(coro, self._loop)
+            # Fallback: выполняем синхронно в отдельном временном цикле (нежелательно, но надёжно)
+            new_loop = asyncio.new_event_loop()
+            try:
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close() 
