@@ -328,12 +328,18 @@ class QuikConnector:
         sec_code: str,
         price: float | int,
         qty: int | None = None,
+        operation: str | None = None,
+        order_type: str | None = None,
         trans_id: int | None = None,
+        account: str | None = None,
+        client_code: str | None = None,
     ) -> dict[str, Any]:
         """Отправляет транзакцию изменения параметров заявки (MOVE_ORDERS).
 
         В QUIK PRICE и QUANTITY должны быть строками. Изменяем только указанные параметры.
         """
+        logger.warning("MODIFY_ORDER: Попытка изменить заявку %s в %s.%s, цена: %s -> %s", 
+                      order_id, class_code, sec_code, price, qty)
         tr: Dict[str, Any] = {
             "ACTION": "MOVE_ORDERS",
             "CLASSCODE": class_code,
@@ -341,13 +347,24 @@ class QuikConnector:
             "ORDER_KEY": order_id,
             "PRICE": str(price),
         }
+        # OPERATION ('B'/'S') и TYPE ('L'/'M') повышают вероятность приёма брокером
+        if operation is not None:
+            tr["OPERATION"] = operation
+        if order_type is not None:
+            tr["TYPE"] = order_type
+        if account is not None:
+            tr["ACCOUNT"] = account
+        if client_code is not None:
+            tr["CLIENT_CODE"] = client_code
         if qty is not None:
             tr["QUANTITY"] = str(qty)
         if trans_id is not None:
             tr["TRANS_ID"] = str(trans_id)
+        logger.warning("MODIFY_ORDER: Финальная транзакция = %s", tr)
         print(f"===> Отправка заявки: {tr}")
         try:
             result = await self._send_transaction(tr)
+            logger.warning("MODIFY_ORDER: Ответ QUIK = %s", result)
             return result
         except Exception as exc:
             logger.exception("Ошибка при изменении ордера: %s", exc)
@@ -402,6 +419,8 @@ class QuikConnector:
 
     def _on_order(self, event):
         # debug logging removed
+        print(f"========== DEBUG OnOrder Event: {event}")
+        logger.warning("DEBUG OnOrder Event: %s", event)
         from backend.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "order"

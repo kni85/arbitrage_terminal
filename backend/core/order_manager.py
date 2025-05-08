@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from .quik_connector import QuikConnector
 from ..db.database import AsyncSessionLocal
-from ..db.models import Order, OrderStatus
+from ..db.models import Order, OrderStatus, Side
 from ..db.models import Instrument
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,12 @@ class OrderManager:
         self._trans_to_orm: Dict[Any, int] = {}
         # Сохраняем CLASSCODE & SECCODE для каждого ORM-ордера
         self._orm_to_contract: Dict[int, tuple[str, str]] = {}
+        # Сохраняем ACCOUNT для каждой заявки (нужно для MOVE_ORDERS)
+        self._orm_to_account: Dict[int, str] = {}
+        # Сохраняем CLIENT_CODE, если есть – нужен для MOVE_ORDERS
+        self._orm_to_client: Dict[int, str] = {}
+        # Сохраняем ORDER_KEY (внутренний ключ QUIK), который нужен для MOVE_ORDERS
+        self._orm_to_order_key: Dict[int, str] = {}
         # Подписка на заявки больше не требуется, rely on OnOrder/OnTrade/OnTransReply events
 
         # Совместимость с ранними тестами, где вызываются приватные методы
@@ -96,20 +102,26 @@ class OrderManager:
         if class_code and sec_code:
             self._orm_to_contract[orm_order_id] = (class_code, sec_code)
 
+        # Сохраняем торговый счёт
+        account = order_data.get("ACCOUNT") or order_data.get("ACCOUNT_ID")
+        if account:
+            self._orm_to_account[orm_order_id] = str(account)
+
+        # Сохраняем CLIENT_CODE, если есть – нужен для MOVE_ORDERS
+        client_code = order_data.get("CLIENT_CODE")
+        if client_code:
+            self._orm_to_client[orm_order_id] = str(client_code)
+
         resp = await self._connector.place_limit_order(order_data)
         quik_num_raw = resp.get("order_num") or resp.get("order_id")
-        quik_num: Optional[int]
         if quik_num_raw is not None:
             quik_num = int(quik_num_raw)
-        else:
-            # Для оф-лайн тестов с DummyQuikPy генерируем фиктивный QUIK ID
-            import random
-            quik_num = random.randint(10_000_000, 99_999_999)
-            resp["order_num"] = quik_num
-
-        self._register_quik_mapping(quik_num, orm_order_id)
-        await self._update_order_quik_num(orm_order_id, quik_num, strategy_id)
-        return quik_num
+            self._register_quik_mapping(quik_num, orm_order_id)
+            await self._update_order_quik_num(orm_order_id, quik_num, strategy_id)
+            return quik_num
+        # QUIK не вернул order_num — ждём события OnOrder/OnTransReply, где он придёт.
+        logger.info("place_limit_order: QUIK не вернул order_num, ждём callback-событие")
+        return None
 
     async def cancel_order(self, orm_order_id: int) -> None:
         """Отменяет ордер по внутреннему id (через маппинг на QUIK ID).
@@ -117,9 +129,10 @@ class OrderManager:
         Создаём новый TRANS_ID для операции отмены, чтобы можно было отследить
         подтверждение OnTransReply даже если в событии не придёт order_num.
         """
+        order_key = self._orm_to_order_key.get(orm_order_id)
         quik_num = self._orm_to_quik.get(orm_order_id)
-        if quik_num is None:
-            logger.warning(f"Нет QUIK ID для ORM Order {orm_order_id}")
+        if order_key is None and quik_num is None:
+            logger.warning("Нет ORDER_KEY/QUIK ID для ORM Order %s", orm_order_id)
             return
 
         # Получаем CLASSCODE / SECCODE из ORM
@@ -138,8 +151,8 @@ class OrderManager:
                 if contract:
                     class_code, sec_code = contract
                 else:
-                    # Последний шанс: вызов cancel_order только с ORDER_KEY (универсально для моков)
-                    await self._connector.cancel_order(str(quik_num))  # type: ignore[call-arg]
+                    # Нет данных контракта – пытаемся отменить только по ORDER_KEY (подходит для моков/Dummy)
+                    await self._connector.cancel_order(str(order_key or quik_num))  # type: ignore[arg-type]
                     await self._update_order_status(orm_order_id, OrderStatus.CANCELLED)
                     return
 
@@ -148,7 +161,7 @@ class OrderManager:
         trans_id = random.randint(1, 2_000_000_000)
         self._register_trans_mapping(trans_id, orm_order_id)
         resp = await self._connector.cancel_order(
-            str(quik_num),
+            str(order_key or quik_num),
             class_code,
             sec_code,
             trans_id=trans_id,
@@ -164,9 +177,10 @@ class OrderManager:
 
         В QUIK изменение заявки выполняется через MOVE_ORDERS с указанием ORDER_KEY и новых параметров.
         """
+        order_key = self._orm_to_order_key.get(orm_order_id)
         quik_num = self._orm_to_quik.get(orm_order_id)
-        if quik_num is None:
-            logger.warning("Нет QUIK ID для ORM Order %s", orm_order_id)
+        if order_key is None and quik_num is None:
+            logger.warning("Нет ORDER_KEY/QUIK ID для ORM Order %s", orm_order_id)
             return
 
         # Определяем CLASSCODE / SECCODE
@@ -186,22 +200,78 @@ class OrderManager:
                     return
                 class_code, sec_code = contract
 
+        account = self._orm_to_account.get(orm_order_id)
+        client_code = self._orm_to_client.get(orm_order_id)
+
         import random
         trans_id = random.randint(1, 2_000_000_000)
         self._register_trans_mapping(trans_id, orm_order_id)
 
-        resp = await self._connector.modify_order(
-            order_id=str(quik_num),
-            class_code=class_code,
-            sec_code=sec_code,
-            price=new_price,
-            qty=new_qty,
-            trans_id=trans_id,
-        )
-        logger.info("Modify order response: %s", resp)
+        qty_for_move: int | None = new_qty if new_qty is not None else (order.qty if order else None)
 
-        # Локально обновляем цену/кол-во (можно уточнить после подтверждения QUIK)
-        await self._update_order_price(orm_order_id, new_price, new_qty)
+        # Определяем операцию: 'B' — покупка, 'S' — продажа
+        operation = "B" if order and order.side == Side.LONG else "S"
+
+        # --- Решаем, как менять цену ---
+        # На акциях (класс кода начинается с 'TQ') биржа не поддерживает MOVE_ORDERS,
+        # поэтому делаем «отмена + новая заявка». На срочном рынке (SPBFUT, etc.)
+        # MOVE_ORDERS сработает быстрее.
+        use_move_orders = bool(class_code) and not str(class_code).upper().startswith("TQ")
+
+        if use_move_orders:
+            resp = await self._connector.modify_order(
+                order_id=str(order_key or quik_num),
+                class_code=class_code,
+                sec_code=sec_code,
+                price=new_price,
+                qty=qty_for_move,
+                operation=operation,
+                order_type="L",  # изменяем лимитную заявку
+                account=account,
+                client_code=client_code,
+                trans_id=trans_id,
+            )
+            logger.info("Modify order response: %s", resp)
+
+            # Проверяем, принята ли транзакция: result == 0 и data == True
+            move_ok = False
+            if isinstance(resp, dict):
+                move_ok = resp.get("result") in (0, None) and resp.get("data") not in (False, 0, "0", "False")
+
+            if move_ok:
+                # Обновляем локально цену/объём
+                await self._update_order_price(orm_order_id, new_price, qty_for_move)
+                return  # DONE – биржа приняла MOVE_ORDERS
+
+            logger.warning("MOVE_ORDERS не принят брокером – fallback to cancel + new")
+
+        # --- Fallback / Stock market: cancel + new ------------------------------------------------
+        await self.cancel_order(orm_order_id)
+
+        # Формируем данные для новой заявки (используем тот же ORM ID)
+        new_order_data = {
+            "ACTION": "NEW_ORDER",
+            "CLASSCODE": class_code,
+            "SECCODE": sec_code,
+            "ACCOUNT": account,
+            "OPERATION": operation,
+            "PRICE": str(new_price),
+            "QUANTITY": str(qty_for_move or order.qty),
+            "CLIENT_CODE": client_code,
+        }
+
+        import random, asyncio as _aio
+        new_order_data["TRANS_ID"] = str(random.randint(1, 2_000_000_000))
+
+        # Дадим бирже время обработать отмену (обычно сотни миллисекунд)
+        await _aio.sleep(0.2)
+
+        await self.place_limit_order(new_order_data, orm_order_id)
+
+        # Локально обновляем цену/кол-во сразу
+        await self._update_order_price(orm_order_id, new_price, qty_for_move)
+
+        return
 
     async def _update_order_price(self, orm_order_id: int, price: float, qty: int | None = None) -> None:
         """Обновляет цену и/или объём ордера в БД."""
@@ -252,10 +322,13 @@ class OrderManager:
         Если есть order_num и trans_id, связываем их.
         Если ордер найден только по trans_id, обновляем его QUIK_ID.
         """
+        order_key_val = event.get("order_key") or event.get("ORDER_KEY")
         quik_num = self._to_int(event.get("order_id") or event.get("order_num"))
         trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
         orm_order_id = None
-        if quik_num is not None and quik_num in self._quik_to_orm:
+        if order_key_val is not None and order_key_val in self._quik_to_orm:
+            orm_order_id = self._quik_to_orm[order_key_val]
+        elif quik_num is not None and quik_num in self._quik_to_orm:
             orm_order_id = self._quik_to_orm[quik_num]
         elif trans_id is not None and trans_id in self._trans_to_orm:
             orm_order_id = self._trans_to_orm[trans_id]
@@ -267,6 +340,21 @@ class OrderManager:
             return
         status = event.get("status")
         filled = event.get("filled")
+
+        # --- сохраняем ACCOUNT / CLIENT_CODE, если появились в callback'е ---
+        if orm_order_id is not None:
+            acc = event.get("ACCOUNT") or event.get("ACCOUNT_ID") or event.get("account")
+            if acc and orm_order_id not in self._orm_to_account:
+                self._orm_to_account[orm_order_id] = str(acc)
+
+            client_code_cb = event.get("CLIENT_CODE") or event.get("client_code")
+            if client_code_cb and orm_order_id not in self._orm_to_client:
+                self._orm_to_client[orm_order_id] = str(client_code_cb)
+
+            # ORDER_KEY
+            if order_key_val:
+                self._orm_to_order_key.setdefault(orm_order_id, str(order_key_val))
+
         self._schedule(self._update_order_status(orm_order_id, status, filled))
 
     def on_trade_event(self, event: dict):
