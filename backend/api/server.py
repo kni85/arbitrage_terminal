@@ -33,6 +33,8 @@ from fastapi import (
 from pydantic import BaseModel, Field
 import random
 import asyncio
+# Импорт схем для стратегий
+from .models import StrategyConfig as ApiStrategyConfig, StrategyStatus
 
 # ---------------------------------------------------------------------------
 # Попытка импортировать настоящий PortfolioManager. Если нет – заглушка.
