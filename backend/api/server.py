@@ -29,6 +29,7 @@ from fastapi import (
     status,
     WebSocket,
     WebSocketDisconnect,
+    Body,
 )
 from pydantic import BaseModel, Field
 import random
@@ -266,15 +267,15 @@ async def get_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) ->
 @strategies_router.patch("/{sid}", response_model=StrategyStatus)
 async def patch_strategy(
     sid: str,
-    cfg_patch: ApiStrategyConfig,
+    cfg_patch: Dict[str, Any] = Body(...),
     manager: PortfolioManager = Depends(get_pm),
 ) -> Any:
     pm_list = await manager.list_portfolios()
     if sid not in pm_list:
         raise HTTPException(status_code=404, detail="Стратегия не найдена")
-    # Объединяем конфиг
+    # Объединяем конфиг (partial update)
     new_cfg = pm_list[sid]["config"]
-    new_cfg.update(cfg_patch.dict(exclude_unset=True))
+    new_cfg.update(cfg_patch)
     await manager.update_portfolio(sid, new_cfg)
     return StrategyStatus(strategy_id=sid, running=True)
 
