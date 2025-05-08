@@ -197,6 +197,108 @@ async def ws_portfolio_spread(websocket: WebSocket, pid: str, manager: Portfolio
 
 
 # ---------------------------------------------------------------------------
+# Роутер стратегий (CRUD + start/stop)
+# ---------------------------------------------------------------------------
+
+strategies_router = APIRouter(prefix="/strategies", tags=["strategies"])
+
+
+# --- Вспомогательные трансформации -----------------------------------------
+
+def _pm_to_status(pid: str, data: Dict[str, Any]) -> StrategyStatus:
+    """Преобразует запись list_portfolios() -> StrategyStatus."""
+    cfg = data.get("config", {})
+    running = bool(data.get("running"))
+    return StrategyStatus(
+        strategy_id=pid,
+        running=running,
+        spread_bid=None,
+        spread_ask=None,
+        position_qty=None,
+        position_price=None,
+        pnl=None,
+    )
+
+
+# ------------------------- CRUD endpoints ----------------------------------
+
+
+@strategies_router.get("/", response_model=Dict[str, StrategyStatus])
+async def list_strategies(manager: PortfolioManager = Depends(get_pm)) -> Any:  # noqa: D401
+    """Список стратегий + их running-статус."""
+    pm_list = await manager.list_portfolios()
+    return {pid: _pm_to_status(pid, row) for pid, row in pm_list.items()}
+
+
+@strategies_router.post("/", response_model=StrategyStatus, status_code=status.HTTP_201_CREATED)
+async def create_strategy(
+    cfg: ApiStrategyConfig,
+    manager: PortfolioManager = Depends(get_pm),
+) -> Any:
+    """Создать новую стратегию и сразу запустить."""
+    # Поддерживаем базовый конфиг pair-type
+    leg1_cls, leg1_sec = cfg.instrument_leg1.split(".")
+    leg2_cls, leg2_sec = cfg.instrument_leg2.split(".")
+
+    pm_cfg: Dict[str, Any] = {
+        "type": "pair",
+        "name": cfg.name,
+        "leg1": {"ticker": f"{leg1_cls}.{leg1_sec}", "price_ratio": cfg.price_ratio1, "qty_ratio": cfg.qty_ratio},
+        "leg2": {"ticker": f"{leg2_cls}.{leg2_sec}", "price_ratio": cfg.price_ratio2, "qty_ratio": cfg.qty_ratio},
+        "entry_levels": [cfg.threshold_short],
+        "exit_level": abs(cfg.threshold_long),
+        "poll_interval": 0.5,
+        "mode": cfg.mode,
+    }
+    pid = await manager.add_portfolio(pm_cfg)
+    return StrategyStatus(strategy_id=pid, running=True)
+
+
+@strategies_router.get("/{sid}", response_model=StrategyStatus)
+async def get_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) -> Any:
+    pm_list = await manager.list_portfolios()
+    if sid not in pm_list:
+        raise HTTPException(status_code=404, detail="Стратегия не найдена")
+    return _pm_to_status(sid, pm_list[sid])
+
+
+@strategies_router.patch("/{sid}", response_model=StrategyStatus)
+async def patch_strategy(
+    sid: str,
+    cfg_patch: ApiStrategyConfig,
+    manager: PortfolioManager = Depends(get_pm),
+) -> Any:
+    pm_list = await manager.list_portfolios()
+    if sid not in pm_list:
+        raise HTTPException(status_code=404, detail="Стратегия не найдена")
+    # Объединяем конфиг
+    new_cfg = pm_list[sid]["config"]
+    new_cfg.update(cfg_patch.dict(exclude_unset=True))
+    await manager.update_portfolio(sid, new_cfg)
+    return StrategyStatus(strategy_id=sid, running=True)
+
+
+@strategies_router.post("/{sid}/start", status_code=status.HTTP_200_OK)
+async def start_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) -> Any:
+    pm_list = await manager.list_portfolios()
+    if sid in pm_list and pm_list[sid]["running"]:
+        return {"status": "already_running"}
+    if sid not in pm_list:
+        raise HTTPException(status_code=404, detail="Стратегия не найдена")
+    await manager.update_portfolio(sid, pm_list[sid]["config"])
+    return {"status": "started"}
+
+
+@strategies_router.post("/{sid}/stop", status_code=status.HTTP_200_OK)
+async def stop_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) -> Any:
+    pm_list = await manager.list_portfolios()
+    if sid not in pm_list:
+        raise HTTPException(status_code=404, detail="Стратегия не найдена")
+    await manager.stop_portfolio(sid)
+    return {"status": "stopped"}
+
+
+# ---------------------------------------------------------------------------
 # Локальный тест: `python api/server.py`
 # ---------------------------------------------------------------------------
 
@@ -212,5 +314,6 @@ if __name__ == "__main__":
     pm = PortfolioManager()
     app.state.portfolio_manager = pm  # type: ignore[attr-defined]
     app.include_router(api_router)  # без лишнего префикса
+    app.include_router(strategies_router)
 
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
