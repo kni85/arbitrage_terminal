@@ -29,7 +29,7 @@ def test_strategy_config_validation():
 
 def test_strategy_status_serialization():
     status = StrategyStatus(
-        strategy_id=1,
+        strategy_id="1",
         running=True,
         spread_bid=0.1,
         spread_ask=-0.2,

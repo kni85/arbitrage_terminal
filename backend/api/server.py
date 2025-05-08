@@ -207,25 +207,24 @@ strategies_router = APIRouter(prefix="/strategies", tags=["strategies"])
 
 # --- Вспомогательные трансформации -----------------------------------------
 
-def _pm_to_status(pid: str, data: Dict[str, Any]) -> StrategyStatus:
-    """Преобразует запись list_portfolios() -> StrategyStatus."""
-    cfg = data.get("config", {})
+def _pm_to_status(pid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Преобразует запись list_portfolios() -> dict, совместимый с StrategyStatus."""
     running = bool(data.get("running"))
-    return StrategyStatus(
-        strategy_id=pid,
-        running=running,
-        spread_bid=None,
-        spread_ask=None,
-        position_qty=None,
-        position_price=None,
-        pnl=None,
-    )
+    return {
+        "strategy_id": pid,
+        "running": running,
+        "spread_bid": None,
+        "spread_ask": None,
+        "position_qty": None,
+        "position_price": None,
+        "pnl": None,
+    }
 
 
 # ------------------------- CRUD endpoints ----------------------------------
 
 
-@strategies_router.get("/", response_model=Dict[str, StrategyStatus])
+@strategies_router.get("/", response_model=Dict[str, Any])
 async def list_strategies(manager: PortfolioManager = Depends(get_pm)) -> Any:  # noqa: D401
     """Список стратегий + их running-статус."""
     pm_list = await manager.list_portfolios()

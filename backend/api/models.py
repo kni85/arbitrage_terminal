@@ -77,7 +77,7 @@ class StrategyConfig(BaseModel):
 class StrategyStatus(BaseModel):
     """Текущий статус стратегии – отдаётся фронтенду для отображения."""
 
-    strategy_id: int
+    strategy_id: str
     running: bool
 
     spread_bid: Optional[float] = None
