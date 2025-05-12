@@ -44,9 +44,9 @@ from .ws import router as ws_router
 # Попытка импортировать настоящий PortfolioManager. Если нет – заглушка.
 # ---------------------------------------------------------------------------
 try:
-    from core.portfolio_manager import PortfolioManager
-except ImportError as exc:  # pragma: no cover – до появления real модуля
-    logging.warning("core.portfolio_manager не найден (%s) – используется заглушка.", exc)
+    from backend.core.portfolio_manager import PortfolioManager  # правильный путь
+except ImportError as exc:  # pragma: no cover
+    logging.warning("backend.core.portfolio_manager не найден (%s) – используется заглушка.", exc)
 
     class PortfolioManager:  # type: ignore
         async def list_portfolios(self) -> Dict[str, Dict[str, Any]]:

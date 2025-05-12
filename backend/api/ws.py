@@ -13,7 +13,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 try:
-    from core.portfolio_manager import PortfolioManager
+    from backend.core.portfolio_manager import PortfolioManager
 except ImportError:  # pragma: no cover – fallback for unit tests
     logging.warning("core.portfolio_manager not found – using dummy PortfolioManager")
 
