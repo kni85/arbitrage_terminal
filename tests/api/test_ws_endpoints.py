@@ -17,7 +17,14 @@ def client():
 
 
 def test_ws_metrics_stream(client: TestClient):
+    """Должны приходить несколько сообщений с нужными полями и типами."""
     with client.websocket_connect("/ws/strategies/demo/metrics") as ws:
-        msg = ws.receive_json()
-        assert msg["strategy_id"] == "demo"
-        assert "spread_bid" in msg 
+        for _ in range(3):  # читаем три сообщения подряд
+            msg = ws.receive_json()
+            assert msg["strategy_id"] == "demo"
+            # поля присутствуют и являются числовыми/None
+            for fld in ("spread_bid", "spread_ask", "pnl"):
+                assert fld in msg
+                assert isinstance(msg[fld], (float, int))
+            for fld in ("position_qty",):
+                assert isinstance(msg[fld], int) 
