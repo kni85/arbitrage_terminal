@@ -27,4 +27,14 @@ def test_ws_metrics_stream(client: TestClient):
                 assert fld in msg
                 assert isinstance(msg[fld], (float, int))
             for fld in ("position_qty",):
-                assert isinstance(msg[fld], int) 
+                assert isinstance(msg[fld], int)
+
+
+def test_ws_metrics_required_fields(client: TestClient):
+    """Проверяем что поток содержит ключевые поля spread и статус/позицию."""
+    with client.websocket_connect("/ws/strategies/check/metrics") as ws:
+        first = ws.receive_json()
+        # spread fields
+        assert "spread_bid" in first and "spread_ask" in first
+        # статус косвенно через position_qty и pnl
+        assert "position_qty" in first and "pnl" in first 
