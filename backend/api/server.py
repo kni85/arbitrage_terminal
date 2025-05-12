@@ -32,6 +32,7 @@ from fastapi import (
     Body,
 )
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import random
 import asyncio
@@ -332,6 +333,9 @@ app.state.portfolio_manager = pm_instance  # type: ignore[attr-defined]
 app.include_router(api_router)
 app.include_router(strategies_router)
 app.include_router(ws_router)
+
+# static
+app.mount("/static", StaticFiles(directory="backend/frontend/static"), name="static")
 
 # Главная страница
 
