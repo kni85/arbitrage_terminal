@@ -305,30 +305,33 @@ async def stop_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) -
 
 
 # ---------------------------------------------------------------------------
+# Создаём приложение + templates на уровне модуля, чтобы uvicorn backend.api.server:app работал.
+# ---------------------------------------------------------------------------
+
+templates = Jinja2Templates(directory="backend/frontend/templates")
+
+# Глобальный FastAPI-app
+app = FastAPI(title="Arbitrage Terminal API")
+
+# Инициализируем (может быть real или dummy)
+pm_instance = PortfolioManager()
+app.state.portfolio_manager = pm_instance  # type: ignore[attr-defined]
+
+# Подключаем маршруты
+app.include_router(api_router)
+app.include_router(strategies_router)
+app.include_router(ws_router)
+
+# Главная страница
+
+@app.get("/", response_class=HTMLResponse)
+async def index(req: Request):  # type: ignore[valid-type]
+    return templates.TemplateResponse("index.html", {"request": req})
+
+# ---------------------------------------------------------------------------
 # Локальный тест: `python api/server.py`
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
-    app = FastAPI(title="API test")
-    pm = PortfolioManager()
-    app.state.portfolio_manager = pm  # type: ignore[attr-defined]
-    app.include_router(api_router)  # без лишнего префикса
-    app.include_router(strategies_router)
-    app.include_router(ws_router)
-
-    # Jinja2 templates setup
-    templates = Jinja2Templates(directory="backend/frontend/templates")
-
-    # Serve index page
-    @app.get("/", response_class=HTMLResponse)
-    async def index(req: Request):
-        return templates.TemplateResponse("index.html", {"request": req})
-
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
