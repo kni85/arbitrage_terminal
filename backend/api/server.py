@@ -36,6 +36,8 @@ import random
 import asyncio
 # Импорт схем для стратегий
 from .models import StrategyConfig as ApiStrategyConfig, StrategyStatus
+# импортируем ws.router
+from .ws import router as ws_router
 
 # ---------------------------------------------------------------------------
 # Попытка импортировать настоящий PortfolioManager. Если нет – заглушка.
@@ -317,5 +319,6 @@ if __name__ == "__main__":
     app.state.portfolio_manager = pm  # type: ignore[attr-defined]
     app.include_router(api_router)  # без лишнего префикса
     app.include_router(strategies_router)
+    app.include_router(ws_router)
 
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
