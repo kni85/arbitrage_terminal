@@ -31,6 +31,8 @@ from fastapi import (
     WebSocketDisconnect,
     Body,
 )
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 import random
 import asyncio
@@ -320,5 +322,13 @@ if __name__ == "__main__":
     app.include_router(api_router)  # без лишнего префикса
     app.include_router(strategies_router)
     app.include_router(ws_router)
+
+    # Jinja2 templates setup
+    templates = Jinja2Templates(directory="backend/frontend/templates")
+
+    # Serve index page
+    @app.get("/", response_class=HTMLResponse)
+    async def index(req: Request):
+        return templates.TemplateResponse("index.html", {"request": req})
 
     uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
