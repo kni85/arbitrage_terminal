@@ -31,8 +31,7 @@ from fastapi import (
     WebSocketDisconnect,
     Body,
 )
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel, Field
 import random
 import asyncio
@@ -308,7 +307,19 @@ async def stop_strategy(sid: str, manager: PortfolioManager = Depends(get_pm)) -
 # Создаём приложение + templates на уровне модуля, чтобы uvicorn backend.api.server:app работал.
 # ---------------------------------------------------------------------------
 
-templates = Jinja2Templates(directory="backend/frontend/templates")
+# Optional jinja2 templates
+try:
+    from fastapi.templating import Jinja2Templates
+    templates = Jinja2Templates(directory="backend/frontend/templates")
+
+    def _render_index(req):  # type: ignore[valid-type]
+        return templates.TemplateResponse("index.html", {"request": req})
+except AssertionError:
+    # jinja2 не установлен – вернём файл напрямую
+    templates = None  # type: ignore[assignment]
+
+    def _render_index(req):  # noqa: D401
+        return FileResponse("backend/frontend/templates/index.html")
 
 # Глобальный FastAPI-app
 app = FastAPI(title="Arbitrage Terminal API")
@@ -326,7 +337,7 @@ app.include_router(ws_router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(req: Request):  # type: ignore[valid-type]
-    return templates.TemplateResponse("index.html", {"request": req})
+    return _render_index(req)
 
 # ---------------------------------------------------------------------------
 # Локальный тест: `python api/server.py`
