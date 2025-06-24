@@ -9,7 +9,6 @@ from fastapi.responses import HTMLResponse
 from quik_connector.core.quik_connector import QuikConnector
 
 app = FastAPI(title="QUIK Quotes GUI")
-connector = QuikConnector()
 
 # ---------------------------------------------------------------------------
 # Встраиваем простую HTML-страницу (без шаблонов), JS внутри
@@ -95,6 +94,10 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
     current_sub: Optional[Tuple[str, str]] = None  # (class, sec)
     loop = asyncio.get_running_loop()
 
+    # Получаем (или создаём) singleton-коннектор «на лету», чтобы импорт приложения
+    # не блокировался, когда QUIK недоступен
+    connector = QuikConnector()
+
     async def send_json_safe(payload):  # helper-корутина
         try:
             await ws.send_json(payload)
@@ -103,11 +106,48 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
 
     def quote_callback(data):  # вызывается из другого потока
         # пробрасываем в event-loop
-        loop.call_soon_threadsafe(asyncio.create_task, send_json_safe({
-            "bid": data.get("bid"),
-            "ask": data.get("ask"),
-            "time": data.get("time"),
-        }))
+        bids_raw = data.get("bid") or data.get("bids") or data.get("bid_levels")
+        asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
+
+        def _best_price(side_raw, choose_max: bool):
+            """Возвращает лучшую цену из массива/структуры стакана."""
+            if side_raw is None:
+                return None
+
+            # Приводим к списку элементов (list-like)
+            elements = list(side_raw) if isinstance(side_raw, (list, tuple)) else [side_raw]
+
+            prices: list[float] = []
+            for el in elements:
+                price = None
+                # вложенный list/tuple → первый элемент
+                if isinstance(el, (list, tuple)) and el:
+                    price = el[0]
+                elif isinstance(el, dict):
+                    for key in ("price", "p", "offer", "bid", "value"):
+                        if key in el:
+                            price = el[key]
+                            break
+                elif isinstance(el, (int, float)):
+                    price = el
+                if price is not None:
+                    prices.append(float(price))
+
+            if not prices:
+                return None
+            return max(prices) if choose_max else min(prices)
+
+        bid_val = _best_price(bids_raw, choose_max=True)
+        ask_val = _best_price(asks_raw, choose_max=False)
+
+        loop.call_soon_threadsafe(
+            asyncio.create_task,
+            send_json_safe({
+                "bid": bid_val,
+                "ask": ask_val,
+                "time": data.get("time"),
+            }),
+        )
 
     try:
         while True:
@@ -129,4 +169,20 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
         pass
     finally:
         if current_sub:
-            connector.unsubscribe_quotes(*current_sub, quote_callback) 
+            connector.unsubscribe_quotes(*current_sub, quote_callback)
+
+# -----------------------------------------------------------
+# Graceful shutdown: закрываем QuikConnector, чтобы потоки
+# (callback_thread, quote_listener и т.д.) не держали процесс.
+# -----------------------------------------------------------
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:  # noqa: D401
+    try:
+        # Если коннектор создавался, корректно его закрываем.
+        qc = QuikConnector._instance  # type: ignore[attr-defined]
+        if qc is not None:
+            qc.close()
+    except Exception:  # pragma: no cover – защита от падения при выключении
+        pass 
