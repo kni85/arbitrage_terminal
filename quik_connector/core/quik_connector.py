@@ -121,14 +121,21 @@ class QuikConnector:
             callbacks_port=callbacks_port,
         )
 
+        # Определяем, работаем ли мы в режиме заглушки (DummyQuikPy)
+        # Если класс QuikPy объявлен в этом же модуле, значит подключение не удалось
+        self._use_dummy_quotes: bool = self._qp.__class__.__module__ == __name__
+
         # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
         # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
         # сразу после их прихода из QUIK.
         # Если пользователь уже настроил свои обработчики, их можно обернуть, но
         # для текущей цели достаточно прямого назначения.
-        self._qp.on_order = self._on_order  # type: ignore[attr-defined]
         self._qp.on_trade = self._on_trade  # type: ignore[attr-defined]
         self._qp.on_trans_reply = self._on_trans_reply  # type: ignore[attr-defined]
+        # Подписываемся на стакан L2 от реального QuikPy, если он доступен
+        self._qp.on_order = self._on_order  # type: ignore[attr-defined]
+        if hasattr(self._qp, "on_quote"):
+            self._qp.on_quote = self._on_quote  # type: ignore[attr-defined]
 
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
@@ -136,13 +143,15 @@ class QuikConnector:
         self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
 
+        # Запускаем поток-эмулятор котировок **только** если QuikPy не подключён
         self._stop_quote_thread = threading.Event()
-        self._quote_thread = threading.Thread(
-            target=self._quote_listener_loop,
-            name="QP-quotes",
-            daemon=True,
-        )
-        self._quote_thread.start()
+        if self._use_dummy_quotes:
+            self._quote_thread = threading.Thread(
+                target=self._quote_listener_loop,
+                name="QP-quotes",
+                daemon=True,
+            )
+            self._quote_thread.start()
 
         logger.info(
             "QuikConnector initialised (host=%s, req_port=%s, cb_port=%s)",
@@ -434,6 +443,36 @@ class QuikConnector:
         payload["type"] = "trans_reply"
         payload["cmd"] = event.get("cmd")
         OrderManager._get_instance_for_connector(self).on_trans_reply_event(payload)
+
+    # ------------------------------------------------------------------
+    # Обработчик реальных котировок из QuikPy
+    # ------------------------------------------------------------------
+
+    def _on_quote(self, event: dict[str, Any]):  # noqa: D401
+        """Получает котировку от QuikPy и фан-аутит её подписчикам/очереди."""
+        payload = event.get("data", event)
+        payload["type"] = "quote"
+
+        class_code = payload.get("class_code") or payload.get("classCode")
+        sec_code = payload.get("sec_code") or payload.get("secCode")
+        key = f"{class_code}.{sec_code}" if class_code and sec_code else ""
+
+        # Отправляем в очередь событий (если не переполнена)
+        try:
+            self._event_queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            logger.warning("Event queue full — dropping quote event")
+
+        # Рассылаем всем callback-ам, подписанным на инструмент
+        callbacks = self._quote_callbacks.get(key, [])
+        for cb in list(callbacks):
+            try:
+                if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                    asyncio.run_coroutine_threadsafe(cb(payload), self._main_loop)
+                else:
+                    cb(payload)
+            except Exception as exc:  # pragma: no cover
+                logger.exception("Quote callback error: %s", exc)
 
     # ------------------------------------------------------------------
     # Закрытие соединения
