@@ -293,12 +293,17 @@ class OrderManager:
                     order.strategy_id = strategy_id
                 await session.commit()
 
-    async def _update_order_status(self, orm_order_id: int, status: OrderStatus, filled: int = None) -> None:
-        """Обновляет статус, исполненный объём и leaves_qty ордера в БД."""
+    async def _update_order_status(self, orm_order_id: int, status: OrderStatus | None, filled: int = None) -> None:
+        """Обновляет статус, исполненный объём и leaves_qty ордера в БД.
+
+        Если `status` равен None, статус ордера не изменяется (некоторые события OnOrder не
+        содержат поля status).
+        """
         async with AsyncSessionLocal() as session:
             order = await session.get(Order, orm_order_id)
             if order:
-                order.status = status
+                if status is not None:  # обновляем только если передан
+                    order.status = status
                 if filled is not None:
                     order.filled = filled
                     # Корректно рассчитываем leaves_qty

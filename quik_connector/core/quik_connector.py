@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 # Импортируем QuikPy (или создаём заглушку)
 # ---------------------------------------------------------------------------
 try:
-    from QuikPy import QuikPy  # type: ignore
-except ImportError as exc:  # pragma: no cover – офлайн‑режим
+    from quik_connector.vendor.QuikPy import QuikPy  # type: ignore
+except ImportError as exc:  # pragma: no cover – офлайн-режим
     print(f"!!! ВНИМАНИЕ: QuikPy не найден ({exc}) — используется DummyQuikPy.")
     logger.warning("QuikPy не найден (%s) — используется DummyQuikPy.", exc)
 
@@ -411,7 +411,7 @@ class QuikConnector:
     # Вызов колбэков для trades и orders (шаблон для интеграции)
     # ------------------------------------------------------------------
     def _on_trade(self, event):
-        from backend.core.order_manager import OrderManager
+        from quik_connector.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trade"
         payload["cmd"] = event.get("cmd")
@@ -421,7 +421,7 @@ class QuikConnector:
         # debug logging removed
         print(f"========== DEBUG OnOrder Event: {event}")
         logger.warning("DEBUG OnOrder Event: %s", event)
-        from backend.core.order_manager import OrderManager
+        from quik_connector.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "order"
         payload["cmd"] = event.get("cmd")
@@ -429,7 +429,7 @@ class QuikConnector:
 
     def _on_trans_reply(self, event):
         # debug logging removed
-        from backend.core.order_manager import OrderManager
+        from quik_connector.core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trans_reply"
         payload["cmd"] = event.get("cmd")
