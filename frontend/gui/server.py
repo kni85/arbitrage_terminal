@@ -18,64 +18,93 @@ HTML_PAGE = """
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <title>QUOTES GUI</title>
+    <title>Quotes GUI</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
-        label { display: inline-block; width: 90px; }
+        label { display: inline-block; width: 88px; }
         input { width: 100px; margin-right: 10px; }
-        #quotes { margin-top: 20px; font-size: 1.2em; }
-        #quotes span { display: inline-block; width: 120px; }
+        .quotes span { display: inline-block; width: 120px; }
         button { padding: 6px 14px; margin-right: 6px; }
+        .tabs button { padding: 6px 18px; margin-right: 8px; }
+        .tab-content { display: none; margin-top: 18px; }
+        .tab-content.active { display: block; }
     </style>
 </head>
 <body>
-    <h2>Подписка на лучшие bid / ask</h2>
-    <div>
-        <label>CLASSCODE:</label>
-        <input id="classcode" value="TQBR" />
-        <label>SECCODE:</label>
-        <input id="seccode" value="SBER" />
-        <button id="start">Старт</button>
-        <button id="stop" disabled>Стоп</button>
+    <h2>Лучшие Bid / Ask (два инструмента)</h2>
+
+    <!-- Навигация вкладок -->
+    <div class="tabs">
+        <button id="btnTab1">Инструмент 1</button>
+        <button id="btnTab2">Инструмент 2</button>
     </div>
-    <div id="quotes">
-        <span><b>Bid:</b> <span id="bid">---</span></span>
-        <span><b>Ask:</b> <span id="ask">---</span></span>
+
+    <!-- Вкладка 1 -->
+    <div id="tab1" class="tab-content active">
+        <div>
+            <label>CLASSCODE:</label><input id="c1_class" value="TQBR" />
+            <label>SECCODE:</label><input id="c1_sec" value="SBER" />
+            <button id="c1_start">Старт</button>
+            <button id="c1_stop" disabled>Стоп</button>
+        </div>
+        <div class="quotes">
+            <span><b>Bid:</b> <span id="c1_bid">---</span></span>
+            <span><b>Ask:</b> <span id="c1_ask">---</span></span>
+        </div>
+    </div>
+
+    <!-- Вкладка 2 -->
+    <div id="tab2" class="tab-content">
+        <div>
+            <label>CLASSCODE:</label><input id="c2_class" value="TQBR" />
+            <label>SECCODE:</label><input id="c2_sec" value="GAZP" />
+            <button id="c2_start">Старт</button>
+            <button id="c2_stop" disabled>Стоп</button>
+        </div>
+        <div class="quotes">
+            <span><b>Bid:</b> <span id="c2_bid">---</span></span>
+            <span><b>Ask:</b> <span id="c2_ask">---</span></span>
+        </div>
     </div>
 
 <script>
-let ws = null;
-const btnStart = document.getElementById('start');
-const btnStop  = document.getElementById('stop');
+// --- переключение вкладок -------------------------------------------
+function activate(tab){
+    document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
+    document.getElementById('tab'+tab).classList.add('active');
+}
+document.getElementById('btnTab1').onclick = ()=>activate(1);
+document.getElementById('btnTab2').onclick = ()=>activate(2);
 
-function log(msg){ console.log(msg); }
+// --- фабрика для обработки одной вкладки ----------------------------
+function init(prefix){
+    let ws=null;
+    const el=(id)=>document.getElementById(prefix+'_'+id);
 
-btnStart.onclick = () => {
-    const classcode = document.getElementById('classcode').value.trim();
-    const seccode   = document.getElementById('seccode').value.trim();
-    if(!classcode || !seccode){ alert('Укажите CLASSCODE и SECCODE'); return; }
+    el('start').onclick=()=>{
+        const classcode=el('class').value.trim();
+        const seccode =el('sec').value.trim();
+        if(!classcode||!seccode){alert('Укажите CLASSCODE и SECCODE');return;}
 
-    ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onopen = () => {
-        ws.send(JSON.stringify({action: 'start', class_code: classcode, sec_code: seccode}));
-        btnStart.disabled = true;
-        btnStop.disabled  = false;
+        ws=new WebSocket(`ws://${location.host}/ws`);
+        ws.onopen=()=>{
+            ws.send(JSON.stringify({action:'start',class_code:classcode,sec_code:seccode}));
+            el('start').disabled=true; el('stop').disabled=false;
+        };
+        ws.onmessage=(ev)=>{
+            const msg=JSON.parse(ev.data);
+            if(msg.bid!==undefined) el('bid').textContent=msg.bid;
+            if(msg.ask!==undefined) el('ask').textContent=msg.ask;
+        };
+        ws.onclose=()=>{el('start').disabled=false; el('stop').disabled=true;};
+        ws.onerror=(e)=>console.error(e);
     };
-    ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-        if(msg.bid !== undefined){ document.getElementById('bid').textContent = msg.bid; }
-        if(msg.ask !== undefined){ document.getElementById('ask').textContent = msg.ask; }
-    };
-    ws.onclose = () => {
-        btnStart.disabled = false;
-        btnStop.disabled  = true;
-    };
-    ws.onerror = (e) => { console.error(e); };
-};
 
-btnStop.onclick = () => {
-    if(ws && ws.readyState === 1){ ws.send(JSON.stringify({action: 'stop'})); ws.close(); }
-};
+    el('stop').onclick=()=>{ if(ws&&ws.readyState===1){ws.send(JSON.stringify({action:'stop'})); ws.close();} };
+}
+
+init('c1');
+init('c2');
 </script>
 </body>
 </html>
