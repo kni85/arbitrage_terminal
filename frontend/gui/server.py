@@ -23,7 +23,12 @@ HTML_PAGE = """
         body { font-family: Arial, sans-serif; margin: 40px; }
         label { display: inline-block; width: 88px; }
         input { width: 100px; margin-right: 10px; }
-        .quotes span { display: inline-block; width: 120px; }
+        .orderbook-table { border-collapse: collapse; margin-top: 18px; }
+        .orderbook-table th, .orderbook-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: right; font-size: 1.1em; }
+        .orderbook-table th { background: #f0f0f0; }
+        .orderbook-table td.price { font-weight: bold; background: #f8f8ff; }
+        .orderbook-table td.buy { color: #1a7f37; }
+        .orderbook-table td.sell { color: #b22222; }
         button { padding: 6px 14px; margin-right: 6px; }
         .tabs button { padding: 6px 18px; margin-right: 8px; }
         .tab-content { display: none; margin-top: 18px; }
@@ -48,8 +53,14 @@ HTML_PAGE = """
             <button id="c1_stop" disabled>Стоп</button>
         </div>
         <div class="quotes">
-            <span><b>Bid:</b> <span id="c1_bid">---</span></span>
-            <span><b>Ask:</b> <span id="c1_ask">---</span></span>
+            <table class="orderbook-table" id="c1_ob">
+                <thead>
+                    <tr>
+                        <th>Лоты (покупка)</th><th>Цена (покупка)</th><th>Цена (продажа)</th><th>Лоты (продажа)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
 
@@ -62,8 +73,14 @@ HTML_PAGE = """
             <button id="c2_stop" disabled>Стоп</button>
         </div>
         <div class="quotes">
-            <span><b>Bid:</b> <span id="c2_bid">---</span></span>
-            <span><b>Ask:</b> <span id="c2_ask">---</span></span>
+            <table class="orderbook-table" id="c2_ob">
+                <thead>
+                    <tr>
+                        <th>Лоты (покупка)</th><th>Цена (покупка)</th><th>Цена (продажа)</th><th>Лоты (продажа)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
 
@@ -93,14 +110,34 @@ function init(prefix){
         };
         ws.onmessage=(ev)=>{
             const msg=JSON.parse(ev.data);
-            if(msg.bid!==undefined) el('bid').textContent=msg.bid;
-            if(msg.ask!==undefined) el('ask').textContent=msg.ask;
+            if(msg.orderbook){
+                renderOrderbook(el('ob'), msg.orderbook);
+            }
         };
         ws.onclose=()=>{el('start').disabled=false; el('stop').disabled=true;};
         ws.onerror=(e)=>console.error(e);
     };
 
     el('stop').onclick=()=>{ if(ws&&ws.readyState===1){ws.send(JSON.stringify({action:'stop'})); ws.close();} };
+}
+
+function renderOrderbook(table, ob){
+    // ob = { bids: [[price, qty], ...], asks: [[price, qty], ...] }
+    const bids = (ob.bids||[]).slice().sort((a,b)=>b[0]-a[0]); // по убыванию цены
+    const asks = (ob.asks||[]).slice().sort((a,b)=>a[0]-b[0]); // по возрастанию цены
+    const maxRows = Math.max(bids.length, asks.length, 10);
+    let html = '';
+    for(let i=0;i<maxRows;i++){
+        const bid = bids[i]||[];
+        const ask = asks[i]||[];
+        html += `<tr>`+
+            `<td class='buy'>${bid[1]||''}</td>`+
+            `<td class='price'>${bid[0]||''}</td>`+
+            `<td class='price'>${ask[0]||''}</td>`+
+            `<td class='sell'>${ask[1]||''}</td>`+
+            `</tr>`;
+    }
+    table.querySelector('tbody').innerHTML = html;
 }
 
 init('c1');
@@ -134,46 +171,32 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
             pass
 
     def quote_callback(data):  # вызывается из другого потока
-        # пробрасываем в event-loop
+        # Пробрасываем в event-loop
         bids_raw = data.get("bid") or data.get("bids") or data.get("bid_levels")
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
 
-        def _best_price(side_raw, choose_max: bool):
-            """Возвращает лучшую цену из массива/структуры стакана."""
-            if side_raw is None:
-                return None
+        def _to_list(raw, reverse=False):
+            # Преобразует в [[price, qty], ...]
+            arr = []
+            if isinstance(raw, (list, tuple)):
+                for el in raw:
+                    if isinstance(el, (list, tuple)) and len(el) >= 2:
+                        arr.append([parseFloat(el[0]), parseFloat(el[1])])
+                    elif isinstance(el, dict):
+                        price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
+                        qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
+                        if price is not None and qty is not None:
+                            arr.append([float(price), float(qty)])
+                arr = [x for x in arr if x[0] is not None and x[1] is not None]
+            return sorted(arr, key=lambda x: x[0], reverse=reverse)
 
-            # Приводим к списку элементов (list-like)
-            elements = list(side_raw) if isinstance(side_raw, (list, tuple)) else [side_raw]
-
-            prices: list[float] = []
-            for el in elements:
-                price = None
-                # вложенный list/tuple → первый элемент
-                if isinstance(el, (list, tuple)) and el:
-                    price = el[0]
-                elif isinstance(el, dict):
-                    for key in ("price", "p", "offer", "bid", "value"):
-                        if key in el:
-                            price = el[key]
-                            break
-                elif isinstance(el, (int, float)):
-                    price = el
-                if price is not None:
-                    prices.append(float(price))
-
-            if not prices:
-                return None
-            return max(prices) if choose_max else min(prices)
-
-        bid_val = _best_price(bids_raw, choose_max=True)
-        ask_val = _best_price(asks_raw, choose_max=False)
+        bids = _to_list(bids_raw, reverse=True)
+        asks = _to_list(asks_raw, reverse=False)
 
         loop.call_soon_threadsafe(
             asyncio.create_task,
             send_json_safe({
-                "bid": bid_val,
-                "ask": ask_val,
+                "orderbook": {"bids": bids, "asks": asks},
                 "time": data.get("time"),
             }),
         )
