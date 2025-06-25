@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from backend.quik_connector.core.quik_connector import QuikConnector
+from backend.quik_connector.db.database import AsyncSessionLocal
 
 app = FastAPI(title="QUIK Quotes GUI")
 
@@ -42,6 +43,7 @@ HTML_PAGE = """
     <div class="tabs">
         <button id="btnTab1">Инструмент 1</button>
         <button id="btnTab2">Инструмент 2</button>
+        <button id="btnTab3">Отправка ордера</button>
     </div>
 
     <!-- Вкладка 1 -->
@@ -96,6 +98,23 @@ HTML_PAGE = """
         </div>
     </div>
 
+    <!-- Вкладка 3: Отправка ордера -->
+    <div id="tab3" class="tab-content">
+        <h3>Отправка лимитной заявки</h3>
+        <div style="margin-bottom:12px;">
+          <label>CLASSCODE:</label><input id="ord_class" value="TQBR" />
+          <label>SECCODE:</label><input id="ord_sec" value="SBER" /><br/><br/>
+          <label>ACCOUNT:</label><input id="ord_account" />
+          <label>CLIENT:</label><input id="ord_client" /><br/><br/>
+          <label>OPERATION:</label>
+            <select id="ord_side"><option value="B">BUY</option><option value="S">SELL</option></select><br/><br/>
+          <label>PRICE:</label><input id="ord_price" type=number step=0.01 />
+          <label>QUANTITY:</label><input id="ord_qty" type=number value=100 />
+        </div>
+        <button id="ord_send">Send Order</button>
+        <pre id="ord_result" style="margin-top:14px;background:#f8f8f8;padding:8px;"></pre>
+    </div>
+
 <script>
 // --- переключение вкладок -------------------------------------------
 function activate(tab){
@@ -104,6 +123,7 @@ function activate(tab){
 }
 document.getElementById('btnTab1').onclick = ()=>activate(1);
 document.getElementById('btnTab2').onclick = ()=>activate(2);
+document.getElementById('btnTab3').onclick = ()=>activate(3);
 
 // --- фабрика для обработки одной вкладки ----------------------------
 function init(prefix){
@@ -183,6 +203,36 @@ function averagePrice(levels, qty, isBuy){
 
 init('c1');
 init('c2');
+
+// ---- отправка ордера -----------------------------------------------
+const btnSend = document.getElementById('ord_send');
+let wsOrder = null;
+btnSend.onclick = () => {
+    const classcode = document.getElementById('ord_class').value.trim();
+    const seccode   = document.getElementById('ord_sec').value.trim();
+    const account   = document.getElementById('ord_account').value.trim();
+    const client    = document.getElementById('ord_client').value.trim();
+    const side      = document.getElementById('ord_side').value;
+    const price     = parseFloat(document.getElementById('ord_price').value);
+    const qty       = parseInt(document.getElementById('ord_qty').value);
+    if(!classcode||!seccode||!price||!qty){alert('Заполните CLASSCODE, SECCODE, PRICE, QUANTITY');return;}
+
+    if(!wsOrder||wsOrder.readyState!==1){
+        wsOrder = new WebSocket(`ws://${location.host}/ws`);
+        wsOrder.onopen = () => {
+            wsOrder.send(JSON.stringify({action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty }));
+        };
+        wsOrder.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if(msg.type==='order_reply'){
+                document.getElementById('ord_result').textContent = JSON.stringify(msg,null,2);
+            }
+        };
+        wsOrder.onerror = console.error;
+    } else {
+        wsOrder.send(JSON.stringify({action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty }));
+    }
+};
 </script>
 </body>
 </html>
@@ -222,7 +272,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
             if isinstance(raw, (list, tuple)):
                 for el in raw:
                     if isinstance(el, (list, tuple)) and len(el) >= 2:
-                        arr.append([parseFloat(el[0]), parseFloat(el[1])])
+                        arr.append([float(el[0]), float(el[1])])
                     elif isinstance(el, dict):
                         price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
                         qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
@@ -258,6 +308,30 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                 if current_sub:
                     connector.unsubscribe_quotes(*current_sub, quote_callback)
                     current_sub = None
+            elif action == "send_order":
+                # Формируем транзакцию NEW_ORDER
+                order_data = {
+                    "ACTION": "NEW_ORDER",
+                    "CLASSCODE": msg.get("class_code"),
+                    "SECCODE": msg.get("sec_code"),
+                    "ACCOUNT": msg.get("account"),
+                    "CLIENT_CODE": msg.get("client_code"),
+                    "OPERATION": msg.get("operation"),  # 'B' / 'S'
+                    "PRICE": str(msg.get("price")),
+                    "QUANTITY": str(msg.get("quantity")),
+                }
+
+                # генерируем TRANS_ID через сервис
+                from sqlalchemy.ext.asyncio import AsyncSession
+                from backend.trading.order_service import get_next_trans_id
+                async with AsyncSessionLocal() as db_sess:  # type: AsyncSession
+                    next_id = await get_next_trans_id(db_sess)
+                order_data["TRANS_ID"] = str(next_id)
+
+                # Отправляем напрямую через connector
+                resp = await connector.place_limit_order(order_data)
+
+                await send_json_safe({"type": "order_reply", "data": resp})
     except WebSocketDisconnect:
         pass
     finally:

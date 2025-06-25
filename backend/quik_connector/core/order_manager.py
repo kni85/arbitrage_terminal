@@ -88,8 +88,15 @@ class OrderManager:
         strategy_id — id стратегии (если требуется связка)
         Возвращает QUIK ID (quik_num) или None.
         """
+        # Получаем/вычисляем TRANS_ID
         trans_id_raw = order_data.get("TRANS_ID")
-        # Приводим trans_id к int, чтобы тип совпадал с тем, что приходит в событиях QUIK
+        if trans_id_raw is None:
+            from sqlalchemy.ext.asyncio import AsyncSession
+            from backend.trading.order_service import get_next_trans_id
+            async with AsyncSessionLocal() as session:  # type: AsyncSession
+                trans_id_generated = await get_next_trans_id(session)
+            order_data["TRANS_ID"] = str(trans_id_generated)
+            trans_id_raw = trans_id_generated
         try:
             trans_id = int(trans_id_raw) if trans_id_raw is not None else None
         except ValueError:
