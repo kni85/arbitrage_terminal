@@ -1,16 +1,6 @@
-import sys, os
-# Добавляем путь к родительской директории
-sys.path.append(
-    os.path.dirname(               # …/arbitrage_terminal/quik_connector/examples
-        os.path.dirname(           # …/arbitrage_terminal/quik_connector
-            os.path.dirname(os.path.abspath(__file__))  # …/arbitrage_terminal
-        )
-    )
-)
-
 import asyncio
-from quik_connector.core.quik_connector import QuikConnector
-from quik_connector.core.order_manager import OrderManager
+from backend.quik_connector.core.quik_connector import QuikConnector
+from backend.quik_connector.core.order_manager import OrderManager
 
 async def main():
     # Создаём коннектор
@@ -40,5 +30,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     finally:
         # аккуратно гасим соединение и поток CallbackThread
-        from quik_connector.core.quik_connector import QuikConnector
+        from backend.quik_connector.core.quik_connector import QuikConnector
         QuikConnector().close()          # закроет DummyQuikPy/QuikPy

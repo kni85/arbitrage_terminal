@@ -420,7 +420,7 @@ class QuikConnector:
     # Вызов колбэков для trades и orders (шаблон для интеграции)
     # ------------------------------------------------------------------
     def _on_trade(self, event):
-        from quik_connector.core.order_manager import OrderManager
+        from .order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trade"
         payload["cmd"] = event.get("cmd")
@@ -430,7 +430,7 @@ class QuikConnector:
         # debug logging removed
         print(f"========== DEBUG OnOrder Event: {event}")
         logger.warning("DEBUG OnOrder Event: %s", event)
-        from quik_connector.core.order_manager import OrderManager
+        from .order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "order"
         payload["cmd"] = event.get("cmd")
@@ -438,7 +438,7 @@ class QuikConnector:
 
     def _on_trans_reply(self, event):
         # debug logging removed
-        from quik_connector.core.order_manager import OrderManager
+        from .order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trans_reply"
         payload["cmd"] = event.get("cmd")

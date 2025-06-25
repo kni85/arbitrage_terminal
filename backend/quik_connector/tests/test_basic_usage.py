@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 
-from quik_connector.core.order_manager import OrderManager
+from backend.quik_connector.core.order_manager import OrderManager
 
 
 @pytest.mark.asyncio
@@ -13,7 +13,7 @@ async def test_place_limit_order_mapping(monkeypatch):
         return {"order_num": 555}
 
     # Подменяем метод отправки транзакции в QuikConnector
-    monkeypatch.patch("quik_connector.core.quik_connector.QuikConnector.place_limit_order", dummy_place_limit)
+    monkeypatch.patch("backend.quik_connector.core.quik_connector.QuikConnector.place_limit_order", dummy_place_limit)
 
     # Подменяем запись в БД (не хотим поднимать real DB в юнит-тесте)
     async def noop_update_quik_num(*_args, **_kwargs):

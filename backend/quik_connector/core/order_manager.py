@@ -62,8 +62,17 @@ class OrderManager:
 
     @staticmethod
     def _get_instance_for_connector(connector):
-        # Возвращаем уже привязанный экземпляр
-        return connector._order_manager_instance  # type: ignore[attr-defined]
+        """Возвращает OrderManager, связанный с данным QuikConnector.
+
+        Если экземпляр не был заранее зарегистрирован (например, когда заявки
+        отправляются напрямую через QuikConnector без явного создания
+        OrderManager), создаём новый OrderManager on-demand и привязываем его.
+        Это избавляет от AttributeError в callback-потоке.
+        """
+        om = getattr(connector, "_order_manager_instance", None)
+        if om is None:
+            om = OrderManager()
+        return om
 
     def _register_trans_mapping(self, trans_id: Any, orm_order_id: int):
         """Сохраняет привязку trans_id → orm_order_id для int и str форматов."""
