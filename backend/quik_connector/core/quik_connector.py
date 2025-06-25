@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Импортируем QuikPy (или создаём заглушку)
 # ---------------------------------------------------------------------------
 try:
-    from quik_connector.vendor.QuikPy import QuikPy  # type: ignore
+    from backend.quik_connector.vendor.QuikPy import QuikPy  # type: ignore
 except ImportError as exc:  # pragma: no cover – офлайн-режим
     print(f"!!! ВНИМАНИЕ: QuikPy не найден ({exc}) — используется DummyQuikPy.")
     logger.warning("QuikPy не найден (%s) — используется DummyQuikPy.", exc)

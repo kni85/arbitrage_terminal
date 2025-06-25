@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from quik_connector.core.quik_connector import QuikConnector
+from backend.quik_connector.core.quik_connector import QuikConnector
 
 app = FastAPI(title="QUIK Quotes GUI")
 
