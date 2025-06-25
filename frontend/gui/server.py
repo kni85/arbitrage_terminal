@@ -52,6 +52,12 @@ HTML_PAGE = """
             <button id="c1_start">Старт</button>
             <button id="c1_stop" disabled>Стоп</button>
         </div>
+        <div style="margin-bottom:10px;">
+          <input id="c1_qty_sell" type=number value=100 style="width:90px;"/>
+          <output id="c1_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
+          <output id="c1_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
+          <input id="c1_qty_buy" type=number value=100 style="width:90px;"/>
+        </div>
         <div class="quotes">
             <table class="orderbook-table" id="c1_ob">
                 <thead>
@@ -71,6 +77,12 @@ HTML_PAGE = """
             <label>SECCODE:</label><input id="c2_sec" value="GAZP" />
             <button id="c2_start">Старт</button>
             <button id="c2_stop" disabled>Стоп</button>
+        </div>
+        <div style="margin-bottom:10px;">
+          <input id="c2_qty_sell" type=number value=100 style="width:90px;"/>
+          <output id="c2_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
+          <output id="c2_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
+          <input id="c2_qty_buy" type=number value=100 style="width:90px;"/>
         </div>
         <div class="quotes">
             <table class="orderbook-table" id="c2_ob">
@@ -112,6 +124,7 @@ function init(prefix){
             const msg=JSON.parse(ev.data);
             if(msg.orderbook){
                 renderOrderbook(el('ob'), msg.orderbook);
+                recalc(prefix, msg.orderbook);
             }
         };
         ws.onclose=()=>{el('start').disabled=false; el('stop').disabled=true;};
@@ -138,6 +151,34 @@ function renderOrderbook(table, ob){
             `</tr>`;
     }
     table.querySelector('tbody').innerHTML = html;
+}
+
+function recalc(prefix, ob){
+  const qtySell = parseFloat(document.getElementById(prefix+'_qty_sell').value)||0;
+  const qtyBuy  = parseFloat(document.getElementById(prefix+'_qty_buy').value)||0;
+
+  const bids = (ob.bids||[]);
+  const asks = (ob.asks||[]);
+
+  const avgSell = averagePrice(bids, qtySell, false);
+  const avgBuy  = averagePrice(asks, qtyBuy, true);
+
+  document.getElementById(prefix+'_avg_sell').textContent = avgSell ? avgSell.toFixed(2) : '';
+  document.getElementById(prefix+'_avg_buy').textContent  = avgBuy ?  avgBuy.toFixed(2)  : '';
+}
+
+function averagePrice(levels, qty, isBuy){
+  if(qty<=0)return null;
+  const sorted = levels.slice().sort((a,b)=> isBuy? a[0]-b[0]: b[0]-a[0]);
+  let need=qty, cost=0;
+  for(const [price,vol] of sorted){
+      const exec = Math.min(vol, need);
+      cost += price*exec;
+      need -= exec;
+      if(need<=0) break;
+  }
+  if(need>0) return null; // не хватает объёма
+  return cost/qty;
 }
 
 init('c1');
