@@ -304,9 +304,68 @@ document.getElementById('menu_del').onclick = ()=>{
     if(currentRow){
         currentRow.parentNode.removeChild(currentRow);
         currentRow = null;
+        saveAssetsTable();
     }
     menu.style.display='none';
 };
+
+// ---------------- Persistence (localStorage) --------------
+
+function saveField(el){
+    const key = 'fld_'+el.id;
+    if(el.type==='checkbox'){
+        localStorage.setItem(key, el.checked);
+    } else {
+        localStorage.setItem(key, el.value);
+    }
+}
+
+function restoreFields(){
+    document.querySelectorAll('input, select').forEach(el=>{
+        const key = 'fld_'+el.id;
+        const stored = localStorage.getItem(key);
+        if(stored!==null){
+            if(el.type==='checkbox'){
+                el.checked = stored==='true';
+            }else{
+                el.value = stored;
+            }
+        }
+        // save on change
+        el.addEventListener('change', ()=> saveField(el));
+    });
+}
+
+function saveAssetsTable(){
+    const rows = Array.from(assetsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    localStorage.setItem('assets_table', JSON.stringify(rows));
+}
+
+function restoreAssetsTable(){
+    const data = localStorage.getItem('assets_table');
+    if(!data) return;
+    let rows;
+    try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
+    assetsTbody.innerHTML='';
+    rows.forEach(rowData=>{
+        const row = assetsTbody.insertRow(-1);
+        rowData.forEach(cellText=>{
+            const cell = row.insertCell(-1);
+            cell.textContent = cellText;
+            cell.contentEditable = 'true';
+            cell.addEventListener('input', saveAssetsTable);
+        });
+    });
+}
+
+// Attach input listeners to existing table cells (initially none)
+assetsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAssetsTable(); });
+
+// On load restore everything
+window.addEventListener('load', ()=>{
+    restoreFields();
+    restoreAssetsTable();
+});
 </script>
 </body>
 </html>
