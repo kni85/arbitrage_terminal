@@ -165,31 +165,81 @@ document.getElementById('btnTab4').onclick = ()=>activate(4);
 
 // ---------------- Quotes tabs factory ----------------------
 function init(prefix){
-    let ws=null;
-    const el=(id)=>document.getElementById(prefix+'_'+id);
+    let ws = null;
+    const el = (id) => document.getElementById(prefix + '_' + id);
 
-    el('start').onclick=()=>{
-        const classcode=el('class').value.trim();
-        const seccode =el('sec').value.trim();
-        if(!classcode||!seccode){alert('Specify CLASSCODE and SECCODE');return;}
+    const SUB_KEY = 'sub_' + prefix; // flag in localStorage
 
-        ws=new WebSocket(`ws://${location.host}/ws`);
-        ws.onopen=()=>{
-            ws.send(JSON.stringify({action:'start',class_code:classcode,sec_code:seccode}));
-            el('start').disabled=true; el('stop').disabled=false;
+    function openWs(classcode, seccode){
+        if(ws && (ws.readyState === 0 || ws.readyState === 1)) return; // already connecting/connected
+
+        ws = new WebSocket(`ws://${location.host}/ws`);
+
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ action: 'start', class_code: classcode, sec_code: seccode }));
+            el('start').disabled = true;
+            el('stop').disabled  = false;
+            localStorage.setItem(SUB_KEY, JSON.stringify({classcode, seccode}));
         };
-        ws.onmessage=(ev)=>{
-            const msg=JSON.parse(ev.data);
-            if(msg.orderbook){
+
+        ws.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg.orderbook) {
                 renderOrderbook(el('ob'), msg.orderbook);
                 recalc(prefix, msg.orderbook);
             }
         };
-        ws.onclose=()=>{el('start').disabled=false; el('stop').disabled=true;};
-        ws.onerror=(e)=>console.error(e);
+
+        ws.onclose = () => {
+            // If subscription flag still exists -> attempt reconnect after delay
+            const saved = localStorage.getItem(SUB_KEY);
+            if (saved) {
+                setTimeout(() => {
+                    const info = JSON.parse(saved);
+                    openWs(info.classcode, info.seccode);
+                }, 1000);
+            } else {
+                el('start').disabled = false;
+                el('stop').disabled  = true;
+            }
+        };
+
+        ws.onerror = (e) => console.error(e);
+    }
+
+    // --- Start button handler -----------------------------
+    el('start').onclick = () => {
+        const classcode = el('class').value.trim();
+        const seccode   = el('sec').value.trim();
+        if (!classcode || !seccode) {
+            alert('Specify CLASSCODE and SECCODE');
+            return;
+        }
+        openWs(classcode, seccode);
     };
 
-    el('stop').onclick=()=>{ if(ws&&ws.readyState===1){ws.send(JSON.stringify({action:'stop'})); ws.close();} };
+    // --- Stop button handler ------------------------------
+    el('stop').onclick = () => {
+        localStorage.removeItem(SUB_KEY);
+        if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ action: 'stop' }));
+            ws.close();
+        }
+        el('start').disabled = false;
+        el('stop').disabled  = true;
+    };
+
+    // --- Restore running subscription (if any) ------------
+    const savedSub = localStorage.getItem(SUB_KEY);
+    if (savedSub) {
+        try {
+            const info = JSON.parse(savedSub);
+            // restore fields if they differ
+            el('class').value = info.classcode;
+            el('sec').value   = info.seccode;
+            openWs(info.classcode, info.seccode);
+        } catch (e) { console.error(e); }
+    }
 }
 
 // ------------- Order-book rendering ------------------------
