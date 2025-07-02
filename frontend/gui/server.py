@@ -16,7 +16,7 @@ app = FastAPI(title="QUIK Quotes GUI")
 # ---------------------------------------------------------------------------
 HTML_PAGE = """
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8" />
     <title>Quotes GUI</title>
@@ -24,47 +24,61 @@ HTML_PAGE = """
         body { font-family: Arial, sans-serif; margin: 40px; }
         label { display: inline-block; width: 88px; }
         input { width: 100px; margin-right: 10px; }
+
+        /* Order-book tables */
         .orderbook-table { border-collapse: collapse; margin-top: 18px; }
         .orderbook-table th, .orderbook-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: right; font-size: 1.1em; }
         .orderbook-table th { background: #f0f0f0; }
         .orderbook-table td.price { font-weight: bold; background: #f8f8ff; }
         .orderbook-table td.buy { color: #1a7f37; }
         .orderbook-table td.sell { color: #b22222; }
+
+        /* Generic */
         button { padding: 6px 14px; margin-right: 6px; }
         .tabs button { padding: 6px 18px; margin-right: 8px; }
         .tab-content { display: none; margin-top: 18px; }
         .tab-content.active { display: block; }
+
+        /* Assets codes table */
+        .codes-table { border-collapse: collapse; margin-top: 18px; }
+        .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; }
+
+        /* Context menu */
+        .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
+        .context-menu button { display: block; width: 100%; padding: 4px 10px; border: none; background: none; text-align: left; }
+        .context-menu button:hover { background: #f0f0f0; }
     </style>
 </head>
 <body>
-    <h2>Лучшие Bid / Ask (два инструмента)</h2>
+    <h2>Best Bid / Ask (two assets)</h2>
 
-    <!-- Навигация вкладок -->
+    <!-- Tabs navigation -->
     <div class="tabs">
-        <button id="btnTab1">Инструмент 1</button>
-        <button id="btnTab2">Инструмент 2</button>
-        <button id="btnTab3">Отправка ордера</button>
+        <button id="btnTab1">asset_1</button>
+        <button id="btnTab2">asset_2</button>
+        <button id="btnTab3">order</button>
+        <button id="btnTab4">assets_codes</button>
     </div>
 
-    <!-- Вкладка 1 -->
+    <!-- Tab 1: Asset 1 quotes -->
     <div id="tab1" class="tab-content active">
         <div>
             <label>CLASSCODE:</label><input id="c1_class" value="TQBR" />
             <label>SECCODE:</label><input id="c1_sec" value="SBER" />
-            <button id="c1_start">Старт</button>
-            <button id="c1_stop" disabled>Стоп</button>
+            <button id="c1_start">Start</button>
+            <button id="c1_stop" disabled>Stop</button>
         </div>
         <div style="margin-bottom:10px;">
-          <input id="c1_qty_sell" type=number value=100 style="width:90px;"/>
+          <input id="c1_qty_sell" type="number" value="100" style="width:90px;"/>
           <output id="c1_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
           <output id="c1_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
-          <input id="c1_qty_buy" type=number value=100 style="width:90px;"/>
+          <input id="c1_qty_buy" type="number" value="100" style="width:90px;"/>
         </div>
         <div class="quotes">
             <table class="orderbook-table" id="c1_ob">
                 <thead>
                     <tr>
-                        <th>Лоты (покупка)</th><th>Цена (покупка)</th><th>Цена (продажа)</th><th>Лоты (продажа)</th>
+                        <th>Lots (buy)</th><th>Price (buy)</th><th>Price (sell)</th><th>Lots (sell)</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -72,25 +86,25 @@ HTML_PAGE = """
         </div>
     </div>
 
-    <!-- Вкладка 2 -->
+    <!-- Tab 2: Asset 2 quotes -->
     <div id="tab2" class="tab-content">
         <div>
             <label>CLASSCODE:</label><input id="c2_class" value="TQBR" />
             <label>SECCODE:</label><input id="c2_sec" value="GAZP" />
-            <button id="c2_start">Старт</button>
-            <button id="c2_stop" disabled>Стоп</button>
+            <button id="c2_start">Start</button>
+            <button id="c2_stop" disabled>Stop</button>
         </div>
         <div style="margin-bottom:10px;">
-          <input id="c2_qty_sell" type=number value=100 style="width:90px;"/>
+          <input id="c2_qty_sell" type="number" value="100" style="width:90px;"/>
           <output id="c2_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
           <output id="c2_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
-          <input id="c2_qty_buy" type=number value=100 style="width:90px;"/>
+          <input id="c2_qty_buy" type="number" value="100" style="width:90px;"/>
         </div>
         <div class="quotes">
             <table class="orderbook-table" id="c2_ob">
                 <thead>
                     <tr>
-                        <th>Лоты (покупка)</th><th>Цена (покупка)</th><th>Цена (продажа)</th><th>Лоты (продажа)</th>
+                        <th>Lots (buy)</th><th>Price (buy)</th><th>Price (sell)</th><th>Lots (sell)</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -98,9 +112,9 @@ HTML_PAGE = """
         </div>
     </div>
 
-    <!-- Вкладка 3: Отправка ордера -->
+    <!-- Tab 3: Send order -->
     <div id="tab3" class="tab-content">
-        <h3>Отправка лимитной заявки</h3>
+        <h3>Send limit order</h3>
         <div style="margin-bottom:12px;">
           <label>CLASSCODE:</label><input id="ord_class" value="TQBR" />
           <label>SECCODE:</label><input id="ord_sec" value="SBER" /><br/><br/>
@@ -108,15 +122,37 @@ HTML_PAGE = """
           <label>CLIENT:</label><input id="ord_client" /><br/><br/>
           <label>OPERATION:</label>
             <select id="ord_side"><option value="B">BUY</option><option value="S">SELL</option></select><br/><br/>
-          <label>PRICE:</label><input id="ord_price" type=number step=0.01 />
-          <label>QUANTITY:</label><input id="ord_qty" type=number value=100 />
+          <label>PRICE:</label><input id="ord_price" type="number" step="0.01" />
+          <label>QUANTITY:</label><input id="ord_qty" type="number" value="100" />
         </div>
         <button id="ord_send">Send Order</button>
         <pre id="ord_result" style="margin-top:14px;background:#f8f8f8;padding:8px;"></pre>
     </div>
 
+    <!-- Tab 4: Assets codes directory -->
+    <div id="tab4" class="tab-content">
+        <h3>Assets codes directory</h3>
+        <table id="assets_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th>System Code</th>
+                    <th>Exchange</th>
+                    <th>CLASSCODE</th>
+                    <th>SECCODE</th>
+                </tr>
+            </thead>
+            <tbody id="assets_tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- Context menu for assets table -->
+    <div id="assets_menu" class="context-menu">
+        <button id="menu_add">Add row</button>
+        <button id="menu_del">Delete row</button>
+    </div>
+
 <script>
-// --- переключение вкладок -------------------------------------------
+// ---------------- Tabs switching ---------------------------
 function activate(tab){
     document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
     document.getElementById('tab'+tab).classList.add('active');
@@ -124,8 +160,9 @@ function activate(tab){
 document.getElementById('btnTab1').onclick = ()=>activate(1);
 document.getElementById('btnTab2').onclick = ()=>activate(2);
 document.getElementById('btnTab3').onclick = ()=>activate(3);
+document.getElementById('btnTab4').onclick = ()=>activate(4);
 
-// --- фабрика для обработки одной вкладки ----------------------------
+// ---------------- Quotes tabs factory ----------------------
 function init(prefix){
     let ws=null;
     const el=(id)=>document.getElementById(prefix+'_'+id);
@@ -133,7 +170,7 @@ function init(prefix){
     el('start').onclick=()=>{
         const classcode=el('class').value.trim();
         const seccode =el('sec').value.trim();
-        if(!classcode||!seccode){alert('Укажите CLASSCODE и SECCODE');return;}
+        if(!classcode||!seccode){alert('Specify CLASSCODE and SECCODE');return;}
 
         ws=new WebSocket(`ws://${location.host}/ws`);
         ws.onopen=()=>{
@@ -154,10 +191,10 @@ function init(prefix){
     el('stop').onclick=()=>{ if(ws&&ws.readyState===1){ws.send(JSON.stringify({action:'stop'})); ws.close();} };
 }
 
+// ------------- Order-book rendering ------------------------
 function renderOrderbook(table, ob){
-    // ob = { bids: [[price, qty], ...], asks: [[price, qty], ...] }
-    const bids = (ob.bids||[]).slice().sort((a,b)=>b[0]-a[0]); // по убыванию цены
-    const asks = (ob.asks||[]).slice().sort((a,b)=>a[0]-b[0]); // по возрастанию цены
+    const bids = (ob.bids||[]).slice().sort((a,b)=>b[0]-a[0]);
+    const asks = (ob.asks||[]).slice().sort((a,b)=>a[0]-b[0]);
     const maxRows = Math.max(bids.length, asks.length, 10);
     let html = '';
     for(let i=0;i<maxRows;i++){
@@ -197,14 +234,14 @@ function averagePrice(levels, qty, isBuy){
       need -= exec;
       if(need<=0) break;
   }
-  if(need>0) return null; // не хватает объёма
+  if(need>0) return null; // not enough volume
   return cost/qty;
 }
 
 init('c1');
 init('c2');
 
-// ---- отправка ордера -----------------------------------------------
+// ---------------- Order sending ----------------------------
 const btnSend = document.getElementById('ord_send');
 let wsOrder = null;
 btnSend.onclick = () => {
@@ -215,13 +252,13 @@ btnSend.onclick = () => {
     const side      = document.getElementById('ord_side').value;
     const price     = parseFloat(document.getElementById('ord_price').value);
     const qty       = parseInt(document.getElementById('ord_qty').value);
-    if(!classcode||!seccode||!price||!qty){alert('Заполните CLASSCODE, SECCODE, PRICE, QUANTITY');return;}
+    if(!classcode||!seccode||!price||!qty){alert('Fill CLASSCODE, SECCODE, PRICE, QUANTITY');return;}
+
+    const payload = {action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty };
 
     if(!wsOrder||wsOrder.readyState!==1){
         wsOrder = new WebSocket(`ws://${location.host}/ws`);
-        wsOrder.onopen = () => {
-            wsOrder.send(JSON.stringify({action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty }));
-        };
+        wsOrder.onopen = () => wsOrder.send(JSON.stringify(payload));
         wsOrder.onmessage = (ev) => {
             const msg = JSON.parse(ev.data);
             if(msg.type==='order_reply'){
@@ -230,8 +267,45 @@ btnSend.onclick = () => {
         };
         wsOrder.onerror = console.error;
     } else {
-        wsOrder.send(JSON.stringify({action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty }));
+        wsOrder.send(JSON.stringify(payload));
     }
+};
+
+// ---------------- Assets codes table ----------------------
+const assetsTbody = document.getElementById('assets_tbody');
+const menu = document.getElementById('assets_menu');
+let currentRow = null;
+
+// Hide menu on any click outside
+document.body.addEventListener('click', ()=> menu.style.display='none');
+
+// Show menu on right click inside table
+document.getElementById('assets_table').addEventListener('contextmenu', (e)=>{
+    e.preventDefault();
+    // locate row (may be header <tr> which we ignore)
+    currentRow = e.target.closest('tbody tr');
+    menu.style.top = e.pageY + 'px';
+    menu.style.left = e.pageX + 'px';
+    menu.style.display = 'block';
+});
+
+// Add row
+document.getElementById('menu_add').onclick = ()=>{
+    const row = assetsTbody.insertRow(-1);
+    for(let i=0;i<4;i++){
+        const cell = row.insertCell(i);
+        cell.contentEditable = 'true';
+    }
+    menu.style.display='none';
+};
+
+// Delete row
+document.getElementById('menu_del').onclick = ()=>{
+    if(currentRow){
+        currentRow.parentNode.removeChild(currentRow);
+        currentRow = null;
+    }
+    menu.style.display='none';
 };
 </script>
 </body>
