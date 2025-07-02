@@ -156,6 +156,7 @@ HTML_PAGE = """
 function activate(tab){
     document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
     document.getElementById('tab'+tab).classList.add('active');
+    localStorage.setItem('active_tab', tab);
 }
 document.getElementById('btnTab1').onclick = ()=>activate(1);
 document.getElementById('btnTab2').onclick = ()=>activate(2);
@@ -365,6 +366,8 @@ assetsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAssets
 window.addEventListener('load', ()=>{
     restoreFields();
     restoreAssetsTable();
+    const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
+    activate(isNaN(savedTab)?1:savedTab);
 });
 </script>
 </body>
