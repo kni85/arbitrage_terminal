@@ -42,6 +42,7 @@ HTML_PAGE = """
         /* Assets codes table */
         .codes-table { border-collapse: collapse; margin-top: 18px; }
         .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; }
+        .codes-table th { cursor: move; }
 
         /* Context menu */
         .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
@@ -507,6 +508,38 @@ function restorePairsTable(){
 // On-the-fly input
 pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTable(); });
 
+// ---------- Drag & drop column reorder ----------------------
+function enablePairsDragDrop(){
+    const table = document.getElementById('pairs_table');
+    const headers = table.querySelectorAll('thead th');
+    headers.forEach(th=>{
+        th.draggable = true;
+        th.addEventListener('dragstart', e=>{
+            e.dataTransfer.setData('colIndex', th.cellIndex);
+        });
+        th.addEventListener('dragover', e=> e.preventDefault());
+        th.addEventListener('drop', e=>{
+            e.preventDefault();
+            const from = parseInt(e.dataTransfer.getData('colIndex'));
+            const to   = th.cellIndex;
+            if(isNaN(from) || from===to) return;
+            movePairsColumn(from, to);
+            savePairsTable();
+        });
+    });
+}
+
+function movePairsColumn(from, to){
+    const table = document.getElementById('pairs_table');
+    Array.from(table.rows).forEach(row=>{
+        if(from < to){
+            row.insertBefore(row.cells[from], row.cells[to].nextSibling);
+        } else {
+            row.insertBefore(row.cells[from], row.cells[to]);
+        }
+    });
+}
+
 // ---------------- Persistence (localStorage) --------------
 
 function saveField(el){
@@ -564,6 +597,7 @@ window.addEventListener('load', ()=>{
     restoreFields();
     restoreAssetsTable();
     restorePairsTable();
+    enablePairsDragDrop();
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
 });
