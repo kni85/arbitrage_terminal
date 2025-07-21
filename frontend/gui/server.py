@@ -604,7 +604,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                 for el in raw:
                     if isinstance(el, (list, tuple)) and len(el) >= 2:
                         arr.append([float(el[0]), float(el[1])])
-                elif isinstance(el, dict):
+                    elif isinstance(el, dict):
                         price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
                         qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
                         if price is not None and qty is not None:
