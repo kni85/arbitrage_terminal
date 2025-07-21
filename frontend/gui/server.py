@@ -58,6 +58,7 @@ HTML_PAGE = """
         <button id="btnTab2">asset_2</button>
         <button id="btnTab3">order</button>
         <button id="btnTab4">assets_codes</button>
+        <button id="btnTab5">pair_arbitrage</button>
     </div>
 
     <!-- Tab 1: Asset 1 quotes -->
@@ -88,7 +89,7 @@ HTML_PAGE = """
 
     <!-- Tab 2: Asset 2 quotes -->
     <div id="tab2" class="tab-content">
-        <div>
+    <div>
             <label>CLASSCODE:</label><input id="c2_class" value="TQBR" />
             <label>SECCODE:</label><input id="c2_sec" value="GAZP" />
             <button id="c2_start">Start</button>
@@ -145,10 +146,36 @@ HTML_PAGE = """
         </table>
     </div>
 
+    <!-- Tab 5: Pair arbitrage -->
+    <div id="tab5" class="tab-content">
+        <h3>Pair arbitrage configurations</h3>
+        <table id="pairs_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th>asset_1</th>
+                    <th>asset_2</th>
+                    <th>side_1</th>
+                    <th>side_2</th>
+                    <th>qty_ratio_1</th>
+                    <th>qty_ratio_2</th>
+                    <th>price_ratio_1</th>
+                    <th>price_ratio_2</th>
+                </tr>
+            </thead>
+            <tbody id="pairs_tbody"></tbody>
+        </table>
+    </div>
+
     <!-- Context menu for assets table -->
     <div id="assets_menu" class="context-menu">
         <button id="menu_add">Add row</button>
         <button id="menu_del">Delete row</button>
+    </div>
+
+    <!-- Context menu for pairs table -->
+    <div id="pairs_menu" class="context-menu">
+        <button id="pairs_add">Add row</button>
+        <button id="pairs_del">Delete row</button>
     </div>
 
 <script>
@@ -162,10 +189,11 @@ document.getElementById('btnTab1').onclick = ()=>activate(1);
 document.getElementById('btnTab2').onclick = ()=>activate(2);
 document.getElementById('btnTab3').onclick = ()=>activate(3);
 document.getElementById('btnTab4').onclick = ()=>activate(4);
+document.getElementById('btnTab5').onclick = ()=>activate(5);
 
 // ---------------- Quotes tabs factory ----------------------
 function init(prefix){
-    let ws = null;
+let ws = null;
     const el = (id) => document.getElementById(prefix + '_' + id);
 
     const SUB_KEY = 'sub_' + prefix; // flag in localStorage
@@ -173,17 +201,17 @@ function init(prefix){
     function openWs(classcode, seccode){
         if(ws && (ws.readyState === 0 || ws.readyState === 1)) return; // already connecting/connected
 
-        ws = new WebSocket(`ws://${location.host}/ws`);
+    ws = new WebSocket(`ws://${location.host}/ws`);
 
-        ws.onopen = () => {
+    ws.onopen = () => {
             ws.send(JSON.stringify({ action: 'start', class_code: classcode, sec_code: seccode }));
             el('start').disabled = true;
             el('stop').disabled  = false;
             localStorage.setItem(SUB_KEY, JSON.stringify({classcode, seccode}));
         };
 
-        ws.onmessage = (ev) => {
-            const msg = JSON.parse(ev.data);
+    ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
             if (msg.orderbook) {
                 renderOrderbook(el('ob'), msg.orderbook);
                 recalc(prefix, msg.orderbook);
@@ -360,6 +388,122 @@ document.getElementById('menu_del').onclick = ()=>{
     menu.style.display='none';
 };
 
+// ---------------- Pair arbitrage table ----------------------
+const pairsTbody = document.getElementById('pairs_tbody');
+const pairsMenu  = document.getElementById('pairs_menu');
+let currentPairRow = null;
+
+// Hide menu on any click outside
+document.body.addEventListener('click', ()=> pairsMenu.style.display='none');
+
+// Show menu on right click inside table
+document.getElementById('pairs_table').addEventListener('contextmenu', (e)=>{
+    e.preventDefault();
+    currentPairRow = e.target.closest('tbody tr');
+    pairsMenu.style.top = e.pageY + 'px';
+    pairsMenu.style.left = e.pageX + 'px';
+    pairsMenu.style.display = 'block';
+});
+
+// Add row helper
+function addPairsRow(data){
+    const row = pairsTbody.insertRow(-1);
+
+    // asset_1
+    let cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[0] || '' : '';
+
+    // asset_2
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[1] || '' : '';
+
+    // side_1 select
+    cell = row.insertCell(-1);
+    const sel1 = document.createElement('select');
+    sel1.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
+    sel1.value = data ? data[2] || 'BUY' : 'BUY';
+    cell.appendChild(sel1);
+
+    // side_2 select
+    cell = row.insertCell(-1);
+    const sel2 = document.createElement('select');
+    sel2.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
+    sel2.value = data ? data[3] || 'BUY' : 'BUY';
+    cell.appendChild(sel2);
+
+    // qty_ratio_1
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[4] || '' : '';
+
+    // qty_ratio_2
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[5] || '' : '';
+
+    // price_ratio_1
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[6] || '' : '';
+
+    // price_ratio_2
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[7] || '' : '';
+
+    // listeners for persistence
+    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
+    [sel1, sel2].forEach(sel=> sel.addEventListener('change', savePairsTable));
+}
+
+// Add row via menu
+document.getElementById('pairs_add').onclick = ()=>{
+    addPairsRow();
+    pairsMenu.style.display='none';
+    savePairsTable();
+};
+
+// Delete row via menu
+document.getElementById('pairs_del').onclick = ()=>{
+    if(currentPairRow){
+        currentPairRow.parentNode.removeChild(currentPairRow);
+        currentPairRow = null;
+        savePairsTable();
+    }
+    pairsMenu.style.display='none';
+};
+
+function savePairsTable(){
+    const rows = Array.from(pairsTbody.rows).map(r=>{
+        const tds = r.cells;
+        return [
+            tds[0].textContent,
+            tds[1].textContent,
+            tds[2].querySelector('select').value,
+            tds[3].querySelector('select').value,
+            tds[4].textContent,
+            tds[5].textContent,
+            tds[6].textContent,
+            tds[7].textContent,
+        ];
+    });
+    localStorage.setItem('pairs_table', JSON.stringify(rows));
+}
+
+function restorePairsTable(){
+    const data = localStorage.getItem('pairs_table');
+    if(!data) return;
+    let rows;
+    try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
+    pairsTbody.innerHTML='';
+    rows.forEach(rowData=> addPairsRow(rowData));
+}
+
+// On-the-fly input
+pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTable(); });
+
 // ---------------- Persistence (localStorage) --------------
 
 function saveField(el){
@@ -416,6 +560,7 @@ assetsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAssets
 window.addEventListener('load', ()=>{
     restoreFields();
     restoreAssetsTable();
+    restorePairsTable();
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
 });
@@ -459,7 +604,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                 for el in raw:
                     if isinstance(el, (list, tuple)) and len(el) >= 2:
                         arr.append([float(el[0]), float(el[1])])
-                    elif isinstance(el, dict):
+                elif isinstance(el, dict):
                         price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
                         qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
                         if price is not None and qty is not None:
