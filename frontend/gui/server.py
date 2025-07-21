@@ -164,6 +164,7 @@ HTML_PAGE = """
                     <th data-col="strategy_name">strategy_name</th>
                     <th data-col="price_1">price_1</th>
                     <th data-col="price_2">price_2</th>
+                    <th data-col="hit_price">hit_price</th>
                     <th data-col="get_mdata">get_mdata</th>
                 </tr>
             </thead>
@@ -415,6 +416,15 @@ function cellById(row,id){
     return idx>=0 ? row.cells[idx] : null;
 }
 
+function updateHitPrice(row){
+    const p1 = parseFloat(cellById(row,'price_1').textContent)||0;
+    const p2 = parseFloat(cellById(row,'price_2').textContent)||0;
+    const r1 = parseFloat(cellById(row,'price_ratio_1').textContent)||0;
+    const r2 = parseFloat(cellById(row,'price_ratio_2').textContent)||0;
+    const hit = p1*r1 - p2*r2;
+    cellById(row,'hit_price').textContent = hit ? hit.toFixed(2): '';
+}
+
 // ----- Utilities ---------------------------------------
 
 function lookupClassSec(systemCode){
@@ -488,17 +498,24 @@ function addPairsRow(data){
     // price_2 (read-only)
     row.appendChild(document.createElement('td')).textContent = data? data[10] || '' : '';
 
+    // hit_price (read-only)
+    row.appendChild(document.createElement('td')).textContent = data? data[11] || '' : '';
+
     // get_mdata checkbox
     td = document.createElement('td');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = data ? !!data[11] : false;
+    cb.checked = data ? !!data[12] : false;
     td.appendChild(cb);
     row.appendChild(td);
 
     // Attach listeners for persistence
     row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
     [sel1, sel2, cb].forEach(el=> el.addEventListener('change', savePairsTable));
+
+    // update hit price when ratios change
+    cellById(row,'price_ratio_1').addEventListener('input', ()=>{ updateHitPrice(row); });
+    cellById(row,'price_ratio_2').addEventListener('input', ()=>{ updateHitPrice(row); });
 
     cb.addEventListener('change', ()=>{
         if(cb.checked){ startRowFeeds(row);} else { stopRowFeeds(row);} });
@@ -508,6 +525,7 @@ function addPairsRow(data){
 
     // align new row to current column order
     restorePairsOrder();
+    updateHitPrice(row);
 }
 
 // Hide menu on any click outside
@@ -540,7 +558,7 @@ document.getElementById('pairs_del').onclick = ()=>{
 };
 
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','get_mdata'];
+    const COLS = ['asset_1','asset_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','hit_price','get_mdata'];
     const rows = Array.from(pairsTbody.rows).map(r=>{
         return COLS.map(col=>{
             const cell = cellById(r,col);
@@ -601,6 +619,7 @@ function connectAsset(row, idx, cfg){
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(2): '';
+            updateHitPrice(row);
         }
     };
     ws.onclose = ()=>{
