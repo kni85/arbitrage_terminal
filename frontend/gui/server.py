@@ -50,7 +50,7 @@ HTML_PAGE = """
     </style>
 </head>
 <body>
-    <h2>Best Bid / Ask (two assets)</h2>
+    <h2 id="page_title">asset_1</h2>
 
     <!-- Tabs navigation -->
     <div class="tabs">
@@ -180,9 +180,12 @@ HTML_PAGE = """
 
 <script>
 // ---------------- Tabs switching ---------------------------
+const TAB_NAMES = {1:'asset_1',2:'asset_2',3:'order',4:'assets_codes',5:'pair_arbitrage'};
+
 function activate(tab){
     document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
     document.getElementById('tab'+tab).classList.add('active');
+    document.getElementById('page_title').textContent = TAB_NAMES[tab] || '';
     localStorage.setItem('active_tab', tab);
 }
 document.getElementById('btnTab1').onclick = ()=>activate(1);
