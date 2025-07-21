@@ -153,18 +153,18 @@ HTML_PAGE = """
         <table id="pairs_table" class="codes-table">
             <thead>
                 <tr>
-                    <th>asset_1</th>
-                    <th>asset_2</th>
-                    <th>side_1</th>
-                    <th>side_2</th>
-                    <th>qty_ratio_1</th>
-                    <th>qty_ratio_2</th>
-                    <th>price_ratio_1</th>
-                    <th>price_ratio_2</th>
-                    <th>strategy_name</th>
-                    <th>price_1</th>
-                    <th>price_2</th>
-                    <th>get_mdata</th>
+                    <th data-col="asset_1">asset_1</th>
+                    <th data-col="asset_2">asset_2</th>
+                    <th data-col="side_1">side_1</th>
+                    <th data-col="side_2">side_2</th>
+                    <th data-col="qty_ratio_1">qty_ratio_1</th>
+                    <th data-col="qty_ratio_2">qty_ratio_2</th>
+                    <th data-col="price_ratio_1">price_ratio_1</th>
+                    <th data-col="price_ratio_2">price_ratio_2</th>
+                    <th data-col="strategy_name">strategy_name</th>
+                    <th data-col="price_1">price_1</th>
+                    <th data-col="price_2">price_2</th>
+                    <th data-col="get_mdata">get_mdata</th>
                 </tr>
             </thead>
             <tbody id="pairs_tbody"></tbody>
@@ -401,17 +401,19 @@ const pairsTbody = document.getElementById('pairs_tbody');
 const pairsMenu  = document.getElementById('pairs_menu');
 let currentPairRow = null;
 
-// Hide menu on any click outside
-document.body.addEventListener('click', ()=> pairsMenu.style.display='none');
+// ---------- column helpers --------------------------------
+function colIndexById(id){
+    const ths = document.querySelectorAll('#pairs_table thead th');
+    for(let i=0;i<ths.length;i++){
+        if(ths[i].dataset.col===id) return i;
+    }
+    return -1;
+}
 
-// Show menu on right click inside table
-document.getElementById('pairs_table').addEventListener('contextmenu', (e)=>{
-    e.preventDefault();
-    currentPairRow = e.target.closest('tbody tr');
-    pairsMenu.style.top = e.pageY + 'px';
-    pairsMenu.style.left = e.pageX + 'px';
-    pairsMenu.style.display = 'block';
-});
+function cellById(row,id){
+    const idx = colIndexById(id);
+    return idx>=0 ? row.cells[idx] : null;
+}
 
 // ----- Utilities ---------------------------------------
 
@@ -428,111 +430,99 @@ function lookupClassSec(systemCode){
     return null;
 }
 
-function calcAvgPrice(orderbook, qty, isBuy){
-    return averagePrice(isBuy? (orderbook.asks||[]): (orderbook.bids||[]), qty, isBuy);
+function calcAvgPrice(ob, qty, isBuy){
+    return averagePrice(isBuy? (ob.asks||[]): (ob.bids||[]), qty, isBuy);
 }
 
-// Store WS refs per row
-
+// Store WebSocket refs per row per asset index (1 or 2)
 function setRowWs(row, idx, ws){
     row._ws = row._ws||{};
-    row._ws[idx]=ws;
-}
-
-function getRowWs(row, idx){
-    return row._ws ? row._ws[idx]: null;
+    row._ws[idx] = ws;
 }
 
 function closeRowWs(row){
     if(row._ws){
-        Object.values(row._ws).forEach(ws=>{ try{ ws.close();}catch(e){} });
-        row._ws={};
+        Object.values(row._ws).forEach(ws=>{ try{ ws.close(); } catch(e){} });
+        row._ws = {};
     }
 }
 
-// Add row helper
+// -------------------- Add row helper --------------------
 function addPairsRow(data){
     const row = pairsTbody.insertRow(-1);
 
-    // asset_1
-    let cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[0] || '' : '';
+    // helper to create editable cell
+    const makeEditable = (value='') => {
+        const c = document.createElement('td');
+        c.contentEditable = 'true';
+        c.textContent = value;
+        return c;
+    };
 
-    // asset_2
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[1] || '' : '';
+    // Create cells in default order
+    row.appendChild(makeEditable(data?data[0]:'')); // asset_1
+    row.appendChild(makeEditable(data?data[1]:'')); // asset_2
 
     // side_1 select
-    cell = row.insertCell(-1);
+    let td = document.createElement('td');
     const sel1 = document.createElement('select');
     sel1.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
-    sel1.value = data ? data[2] || 'BUY' : 'BUY';
-    cell.appendChild(sel1);
+    sel1.value = data? data[2] || 'BUY' : 'BUY';
+    td.appendChild(sel1); row.appendChild(td);
 
     // side_2 select
-    cell = row.insertCell(-1);
+    td = document.createElement('td');
     const sel2 = document.createElement('select');
     sel2.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
-    sel2.value = data ? data[3] || 'BUY' : 'BUY';
-    cell.appendChild(sel2);
+    sel2.value = data? data[3] || 'BUY' : 'BUY';
+    td.appendChild(sel2); row.appendChild(td);
 
-    // qty_ratio_1
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[4] || '' : '';
-
-    // qty_ratio_2
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[5] || '' : '';
-
-    // price_ratio_1
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[6] || '' : '';
-
-    // price_ratio_2
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[7] || '' : '';
-
-    // strategy_name
-    cell = row.insertCell(-1);
-    cell.contentEditable = 'true';
-    cell.textContent = data ? data[8] || '' : '';
+    row.appendChild(makeEditable(data?data[4]:'')); // qty_ratio_1
+    row.appendChild(makeEditable(data?data[5]:'')); // qty_ratio_2
+    row.appendChild(makeEditable(data?data[6]:'')); // price_ratio_1
+    row.appendChild(makeEditable(data?data[7]:'')); // price_ratio_2
+    row.appendChild(makeEditable(data?data[8]:'')); // strategy_name
 
     // price_1 (read-only)
-    cell = row.insertCell(-1);
-    cell.textContent = data ? data[9] || '' : '';
-
+    row.appendChild(document.createElement('td')).textContent = data? data[9] || '' : '';
     // price_2 (read-only)
-    cell = row.insertCell(-1);
-    cell.textContent = data ? data[10] || '' : '';
+    row.appendChild(document.createElement('td')).textContent = data? data[10] || '' : '';
 
     // get_mdata checkbox
-    cell = row.insertCell(-1);
+    td = document.createElement('td');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = data ? !!data[11] : false;
-    cell.appendChild(cb);
+    td.appendChild(cb);
+    row.appendChild(td);
+
+    // Attach listeners for persistence
+    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
+    [sel1, sel2, cb].forEach(el=> el.addEventListener('change', savePairsTable));
 
     cb.addEventListener('change', ()=>{
-        if(cb.checked){
-            startRowFeeds(row);
-        } else {
-            stopRowFeeds(row);
-        }
-        savePairsTable();
-    });
+        if(cb.checked){ startRowFeeds(row);} else { stopRowFeeds(row);} });
 
-    // listeners for persistence
-    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
-    [sel1, sel2].forEach(sel=> sel.addEventListener('change', savePairsTable));
+    // if checkbox checked on restore – mark for later start
+    if(cb.checked){ row._pendingStart = true; }
+
+    // align new row to current column order
+    restorePairsOrder();
 }
 
-// Add row via menu
+// Hide menu on any click outside
+document.body.addEventListener('click', ()=> pairsMenu.style.display='none');
+
+// Show menu on right click inside table
+document.getElementById('pairs_table').addEventListener('contextmenu', (e)=>{
+    e.preventDefault();
+    currentPairRow = e.target.closest('tbody tr');
+    pairsMenu.style.top = e.pageY + 'px';
+    pairsMenu.style.left = e.pageX + 'px';
+    pairsMenu.style.display = 'block';
+});
+
+// Add row
 document.getElementById('pairs_add').onclick = ()=>{
     addPairsRow();
     pairsMenu.style.display='none';
@@ -550,22 +540,19 @@ document.getElementById('pairs_del').onclick = ()=>{
 };
 
 function savePairsTable(){
+    const COLS = ['asset_1','asset_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','get_mdata'];
     const rows = Array.from(pairsTbody.rows).map(r=>{
-        const tds = r.cells;
-        return [
-            tds[0].textContent,
-            tds[1].textContent,
-            tds[2].querySelector('select').value,
-            tds[3].querySelector('select').value,
-            tds[4].textContent,
-            tds[5].textContent,
-            tds[6].textContent,
-            tds[7].textContent,
-            tds[8].textContent,
-            tds[9].textContent,
-            tds[10].textContent,
-            tds[11].querySelector('input').checked
-        ];
+        return COLS.map(col=>{
+            const cell = cellById(r,col);
+            if(!cell) return '';
+            if(col.startsWith('side_')){
+                return cell.querySelector('select').value;
+            }
+            if(col==='get_mdata'){
+                return cell.querySelector('input').checked;
+            }
+            return cell.textContent;
+        });
     });
     localStorage.setItem('pairs_table', JSON.stringify(rows));
 }
@@ -586,8 +573,8 @@ pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTa
 
 function startRowFeeds(row){
     // Asset 1
-    const asset1 = row.cells[0].textContent.trim();
-    const asset2 = row.cells[1].textContent.trim();
+    const asset1 = cellById(row,'asset_1').textContent.trim();
+    const asset2 = cellById(row,'asset_2').textContent.trim();
 
     const cfg1 = lookupClassSec(asset1);
     const cfg2 = lookupClassSec(asset2);
@@ -601,8 +588,8 @@ function stopRowFeeds(row){
 }
 
 function connectAsset(row, idx, cfg){
-    const side = row.cells[ idx===1 ? 2:3 ].querySelector('select').value;
-    const qty  = parseFloat(row.cells[ idx===1 ? 4:5 ].textContent)||0;
+    const side = cellById(row, idx===1 ? 'side_1' : 'side_2').querySelector('select').value;
+    const qty  = parseFloat(cellById(row, idx===1 ? 'qty_ratio_1' : 'qty_ratio_2').textContent)||0;
     if(!qty){ return; }
 
     const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -613,12 +600,12 @@ function connectAsset(row, idx, cfg){
         const msg = JSON.parse(ev.data);
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
-            row.cells[ idx===1? 9:10 ].textContent = price ? price.toFixed(2): '';
+            cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(2): '';
         }
     };
     ws.onclose = ()=>{
         // auto-reconnect if checkbox still checked
-        if(row.cells[11].querySelector('input').checked){
+        if(cellById(row,'get_mdata').querySelector('input').checked){
             setTimeout(()=> connectAsset(row, idx, cfg), 1000);
         }
     };
@@ -643,6 +630,7 @@ function enablePairsDragDrop(){
             if(isNaN(from) || from===to) return;
             movePairsColumn(from, to);
             savePairsTable();
+            savePairsOrder();
         });
     });
 }
@@ -654,6 +642,24 @@ function movePairsColumn(from, to){
             row.insertBefore(row.cells[from], row.cells[to].nextSibling);
         } else {
             row.insertBefore(row.cells[from], row.cells[to]);
+        }
+    });
+}
+
+function savePairsOrder(){
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
+    localStorage.setItem('pairs_col_order', JSON.stringify(order));
+}
+
+function restorePairsOrder(){
+    const saved = localStorage.getItem('pairs_col_order');
+    if(!saved) return;
+    let order;
+    try{ order = JSON.parse(saved);}catch(e){ return; }
+    order.forEach((colId,targetIdx)=>{
+        const cur = colIndexById(colId);
+        if(cur>=0 && cur!==targetIdx){
+            movePairsColumn(cur, targetIdx);
         }
     });
 }
@@ -715,6 +721,7 @@ window.addEventListener('load', ()=>{
     restoreFields();
     restoreAssetsTable();
     restorePairsTable();
+    restorePairsOrder();
     enablePairsDragDrop();
     // Start feeds for rows marked
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
