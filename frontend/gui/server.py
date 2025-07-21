@@ -161,6 +161,10 @@ HTML_PAGE = """
                     <th>qty_ratio_2</th>
                     <th>price_ratio_1</th>
                     <th>price_ratio_2</th>
+                    <th>strategy_name</th>
+                    <th>price_1</th>
+                    <th>price_2</th>
+                    <th>get_mdata</th>
                 </tr>
             </thead>
             <tbody id="pairs_tbody"></tbody>
@@ -409,6 +413,43 @@ document.getElementById('pairs_table').addEventListener('contextmenu', (e)=>{
     pairsMenu.style.display = 'block';
 });
 
+// ----- Utilities ---------------------------------------
+
+function lookupClassSec(systemCode){
+    const data = localStorage.getItem('assets_table');
+    if(!data) return null;
+    let rows;
+    try { rows = JSON.parse(data);} catch(e){return null;}
+    for(const r of rows){
+        if(r[0]===systemCode){
+            return {classcode:r[2], seccode:r[3]};
+        }
+    }
+    return null;
+}
+
+function calcAvgPrice(orderbook, qty, isBuy){
+    return averagePrice(isBuy? (orderbook.asks||[]): (orderbook.bids||[]), qty, isBuy);
+}
+
+// Store WS refs per row
+
+function setRowWs(row, idx, ws){
+    row._ws = row._ws||{};
+    row._ws[idx]=ws;
+}
+
+function getRowWs(row, idx){
+    return row._ws ? row._ws[idx]: null;
+}
+
+function closeRowWs(row){
+    if(row._ws){
+        Object.values(row._ws).forEach(ws=>{ try{ ws.close();}catch(e){} });
+        row._ws={};
+    }
+}
+
 // Add row helper
 function addPairsRow(data){
     const row = pairsTbody.insertRow(-1);
@@ -457,6 +498,35 @@ function addPairsRow(data){
     cell.contentEditable = 'true';
     cell.textContent = data ? data[7] || '' : '';
 
+    // strategy_name
+    cell = row.insertCell(-1);
+    cell.contentEditable = 'true';
+    cell.textContent = data ? data[8] || '' : '';
+
+    // price_1 (read-only)
+    cell = row.insertCell(-1);
+    cell.textContent = data ? data[9] || '' : '';
+
+    // price_2 (read-only)
+    cell = row.insertCell(-1);
+    cell.textContent = data ? data[10] || '' : '';
+
+    // get_mdata checkbox
+    cell = row.insertCell(-1);
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = data ? !!data[11] : false;
+    cell.appendChild(cb);
+
+    cb.addEventListener('change', ()=>{
+        if(cb.checked){
+            startRowFeeds(row);
+        } else {
+            stopRowFeeds(row);
+        }
+        savePairsTable();
+    });
+
     // listeners for persistence
     row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
     [sel1, sel2].forEach(sel=> sel.addEventListener('change', savePairsTable));
@@ -491,6 +561,10 @@ function savePairsTable(){
             tds[5].textContent,
             tds[6].textContent,
             tds[7].textContent,
+            tds[8].textContent,
+            tds[9].textContent,
+            tds[10].textContent,
+            tds[11].querySelector('input').checked
         ];
     });
     localStorage.setItem('pairs_table', JSON.stringify(rows));
@@ -507,6 +581,50 @@ function restorePairsTable(){
 
 // On-the-fly input
 pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTable(); });
+
+// ----------- Live market data per row ----------------------
+
+function startRowFeeds(row){
+    // Asset 1
+    const asset1 = row.cells[0].textContent.trim();
+    const asset2 = row.cells[1].textContent.trim();
+
+    const cfg1 = lookupClassSec(asset1);
+    const cfg2 = lookupClassSec(asset2);
+
+    if(cfg1) connectAsset(row,1,cfg1);
+    if(cfg2) connectAsset(row,2,cfg2);
+}
+
+function stopRowFeeds(row){
+    closeRowWs(row);
+}
+
+function connectAsset(row, idx, cfg){
+    const side = row.cells[ idx===1 ? 2:3 ].querySelector('select').value;
+    const qty  = parseFloat(row.cells[ idx===1 ? 4:5 ].textContent)||0;
+    if(!qty){ return; }
+
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = ()=>{
+        ws.send(JSON.stringify({action:'start', class_code:cfg.classcode, sec_code:cfg.seccode}));
+    };
+    ws.onmessage = (ev)=>{
+        const msg = JSON.parse(ev.data);
+        if(msg.orderbook){
+            const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
+            row.cells[ idx===1? 9:10 ].textContent = price ? price.toFixed(2): '';
+        }
+    };
+    ws.onclose = ()=>{
+        // auto-reconnect if checkbox still checked
+        if(row.cells[11].querySelector('input').checked){
+            setTimeout(()=> connectAsset(row, idx, cfg), 1000);
+        }
+    };
+    ws.onerror = console.error;
+    setRowWs(row, idx, ws);
+}
 
 // ---------- Drag & drop column reorder ----------------------
 function enablePairsDragDrop(){
@@ -598,6 +716,8 @@ window.addEventListener('load', ()=>{
     restoreAssetsTable();
     restorePairsTable();
     enablePairsDragDrop();
+    // Start feeds for rows marked
+    Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
 });
