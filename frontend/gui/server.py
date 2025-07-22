@@ -461,70 +461,49 @@ function closeRowWs(row){
 function addPairsRow(data){
     const row = pairsTbody.insertRow(-1);
 
-    // helper to create editable cell
-    const makeEditable = (value='') => {
-        const c = document.createElement('td');
-        c.contentEditable = 'true';
-        c.textContent = value;
-        return c;
-    };
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
 
-    // Create cells in default order
-    row.appendChild(makeEditable(data?data[0]:'')); // asset_1
-    row.appendChild(makeEditable(data?data[1]:'')); // asset_2
+    // helpers
+    const makeEditable = (value='')=>{ const td=document.createElement('td'); td.contentEditable='true'; td.textContent=value; return td; };
+    const makeSelect = (val)=>{ const td=document.createElement('td'); const s=document.createElement('select'); s.innerHTML='<option value="BUY">BUY</option><option value="SELL">SELL</option>'; s.value=val; td.appendChild(s); return [td,s]; };
 
-    // side_1 select
-    let td = document.createElement('td');
-    const sel1 = document.createElement('select');
-    sel1.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
-    sel1.value = data? data[2] || 'BUY' : 'BUY';
-    td.appendChild(sel1); row.appendChild(td);
+    let sel1, sel2, cb;
 
-    // side_2 select
-    td = document.createElement('td');
-    const sel2 = document.createElement('select');
-    sel2.innerHTML = '<option value="BUY">BUY</option><option value="SELL">SELL</option>';
-    sel2.value = data? data[3] || 'BUY' : 'BUY';
-    td.appendChild(sel2); row.appendChild(td);
+    order.forEach((colId, idx)=>{
+        let td;
+        switch(colId){
+            case 'asset_1': td = makeEditable(data?data[0]:''); break;
+            case 'asset_2': td = makeEditable(data?data[1]:''); break;
+            case 'side_1': [td,sel1] = makeSelect(data? data[2] || 'BUY':'BUY'); break;
+            case 'side_2': [td,sel2] = makeSelect(data? data[3] || 'BUY':'BUY'); break;
+            case 'qty_ratio_1': td = makeEditable(data?data[4]:''); break;
+            case 'qty_ratio_2': td = makeEditable(data?data[5]:''); break;
+            case 'price_ratio_1': td = makeEditable(data?data[6]:''); break;
+            case 'price_ratio_2': td = makeEditable(data?data[7]:''); break;
+            case 'strategy_name': td = makeEditable(data?data[8]:''); break;
+            case 'price_1': td = document.createElement('td'); td.textContent = data? data[9]||'':''; break;
+            case 'price_2': td = document.createElement('td'); td.textContent = data? data[10]||'':''; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[11]||'':''; break;
+            case 'get_mdata':
+                td = document.createElement('td');
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[12]: false; td.appendChild(cb);
+                break;
+            default:
+                td = document.createElement('td');
+        }
+        row.appendChild(td);
+    });
 
-    row.appendChild(makeEditable(data?data[4]:'')); // qty_ratio_1
-    row.appendChild(makeEditable(data?data[5]:'')); // qty_ratio_2
-    row.appendChild(makeEditable(data?data[6]:'')); // price_ratio_1
-    row.appendChild(makeEditable(data?data[7]:'')); // price_ratio_2
-    row.appendChild(makeEditable(data?data[8]:'')); // strategy_name
+    // listeners
+    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row);}));
+    if(sel1) sel1.addEventListener('change', savePairsTable);
+    if(sel2) sel2.addEventListener('change', savePairsTable);
+    if(cb){
+        cb.addEventListener('change', ()=>{ savePairsTable(); if(cb.checked){ startRowFeeds(row);} else { stopRowFeeds(row);} });
+        if(cb.checked) row._pendingStart = true;
+    }
 
-    // price_1 (read-only)
-    row.appendChild(document.createElement('td')).textContent = data? data[9] || '' : '';
-    // price_2 (read-only)
-    row.appendChild(document.createElement('td')).textContent = data? data[10] || '' : '';
-
-    // hit_price (read-only)
-    row.appendChild(document.createElement('td')).textContent = data? data[11] || '' : '';
-
-    // get_mdata checkbox
-    td = document.createElement('td');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = data ? !!data[12] : false;
-    td.appendChild(cb);
-    row.appendChild(td);
-
-    // Attach listeners for persistence
-    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', savePairsTable));
-    [sel1, sel2, cb].forEach(el=> el.addEventListener('change', savePairsTable));
-
-    // update hit price when ratios change
-    cellById(row,'price_ratio_1').addEventListener('input', ()=>{ updateHitPrice(row); });
-    cellById(row,'price_ratio_2').addEventListener('input', ()=>{ updateHitPrice(row); });
-
-    cb.addEventListener('change', ()=>{
-        if(cb.checked){ startRowFeeds(row);} else { stopRowFeeds(row);} });
-
-    // if checkbox checked on restore – mark for later start
-    if(cb.checked){ row._pendingStart = true; }
-
-    // align new row to current column order
-    restorePairsOrder();
+    // initial hit price
     updateHitPrice(row);
 }
 
