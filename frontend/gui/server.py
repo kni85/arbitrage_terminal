@@ -141,6 +141,7 @@ HTML_PAGE = """
                     <th>Exchange</th>
                     <th>CLASSCODE</th>
                     <th>SECCODE</th>
+                    <th>Price Step</th>
                 </tr>
             </thead>
             <tbody id="assets_tbody"></tbody>
@@ -380,7 +381,7 @@ document.getElementById('assets_table').addEventListener('contextmenu', (e)=>{
 // Add row
 document.getElementById('menu_add').onclick = ()=>{
     const row = assetsTbody.insertRow(-1);
-    for(let i=0;i<4;i++){
+    for(let i=0;i<5;i++){
         const cell = row.insertCell(i);
         cell.contentEditable = 'true';
     }
@@ -434,10 +435,17 @@ function lookupClassSec(systemCode){
     try { rows = JSON.parse(data);} catch(e){return null;}
     for(const r of rows){
         if(r[0]===systemCode){
-            return {classcode:r[2], seccode:r[3]};
+            return {classcode:r[2], seccode:r[3], price_step:r[4]};
         }
     }
     return null;
+}
+
+function decimalsFromStep(step){
+    if(!step) return 2;
+    const s = step.toString();
+    const idx = s.indexOf('.')
+    return idx>=0 ? (s.length-idx-1) : 0;
 }
 
 function calcAvgPrice(ob, qty, isBuy){
@@ -587,6 +595,7 @@ function stopRowFeeds(row){
 function connectAsset(row, idx, cfg){
     const side = cellById(row, idx===1 ? 'side_1' : 'side_2').querySelector('select').value;
     const qty  = parseFloat(cellById(row, idx===1 ? 'qty_ratio_1' : 'qty_ratio_2').textContent)||0;
+    const decimals = decimalsFromStep(cfg.price_step);
     if(!qty){ return; }
 
     const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -597,7 +606,7 @@ function connectAsset(row, idx, cfg){
         const msg = JSON.parse(ev.data);
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
-            cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(2): '';
+            cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(decimals): '';
             updateHitPrice(row);
         }
     };
