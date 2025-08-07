@@ -637,7 +637,17 @@ function addPairsRow(data){
             case 'started':
                 td = document.createElement('td');
                 const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[21] : false; td.appendChild(chk);
-                chk.addEventListener('change', ()=>{ if(chk.checked){ cellById(row,'error').textContent=''; } savePairsTable(); });
+                chk.addEventListener('change', ()=>{
+                    if(chk.checked){
+                        // включаем торговлю: очищаем ошибку и сбрасываем внутренние флаги
+                        cellById(row,'error').textContent='';
+                        row._inFlight = false;
+                    } else {
+                        // выключаем торговлю
+                        row._inFlight = false;
+                    }
+                    savePairsTable();
+                });
                 break;
             case 'error': td = document.createElement('td'); td.textContent = data? data[22]||'' : ''; break;
             default:
@@ -647,7 +657,7 @@ function addPairsRow(data){
     });
 
     // listeners
-    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row); updateLeaves(row);}));
+    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row); updateLeaves(row); checkRowForTrade(row);}));
     if(sel1) sel1.addEventListener('change', savePairsTable);
     if(sel2) sel2.addEventListener('change', savePairsTable);
     if(cb){
@@ -721,6 +731,48 @@ function restorePairsTable(){
 // On-the-fly input
 pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTable(); });
 
+// ------------- Trading helpers ----------------------------
+function checkRowForTrade(row){
+    if(!cellById(row,'started').querySelector('input').checked) return; // выключено
+    if(row._inFlight) return; // ждём предыдущий ответ
+
+    const side1 = cellById(row,'side_1').querySelector('select').value;
+    const priceTarget = parseFloat(cellById(row,'price').textContent);
+    if(isNaN(priceTarget)) return;
+    const hit = parseFloat(cellById(row,'hit_price').textContent);
+    if(isNaN(hit)) return;
+
+    const trigger = (side1==='BUY') ? (hit<=priceTarget) : (hit>=priceTarget);
+    const leaves = parseInt(cellById(row,'leaves_qty').textContent)||0;
+
+    if(trigger && leaves>0){
+        sendPairOrder(row);
+    }
+}
+
+function sendPairOrder(row){
+    row._inFlight = true;
+    const payload = {
+        action:'send_pair_order',
+        row_id: Array.from(pairsTbody.rows).indexOf(row),
+        asset_1: cellById(row,'asset_1').textContent.trim(),
+        asset_2: cellById(row,'asset_2').textContent.trim(),
+        side_1 : cellById(row,'side_1').querySelector('select').value,
+        side_2 : cellById(row,'side_2').querySelector('select').value,
+        qty_ratio_1: parseFloat(cellById(row,'qty_ratio_1').textContent)||0,
+        qty_ratio_2: parseFloat(cellById(row,'qty_ratio_2').textContent)||0,
+        account_1: cellById(row,'account_1').textContent.trim(),
+        account_2: cellById(row,'account_2').textContent.trim(),
+    };
+    // отправляем через общий wsOrder (создан ранее)
+    if(!wsOrder||wsOrder.readyState!==1){
+        wsOrder = new WebSocket(`ws://${location.host}/ws`);
+        wsOrder.onopen = ()=> wsOrder.send(JSON.stringify(payload));
+    } else {
+        wsOrder.send(JSON.stringify(payload));
+    }
+}
+
 // ----------- Live market data per row ----------------------
 
 function startRowFeeds(row){
@@ -755,6 +807,7 @@ function connectAsset(row, idx, cfg){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(decimals): '';
             updateHitPrice(row);
+            checkRowForTrade(row);
         }
     };
     ws.onclose = ()=>{
@@ -924,10 +977,10 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     if isinstance(el, (list, tuple)) and len(el) >= 2:
                         arr.append([float(el[0]), float(el[1])])
                     elif isinstance(el, dict):
-                        price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
-                        qty   = el.get("qty")   or el.get("quantity") or el.get("vol") or el.get("volume")
-                        if price is not None and qty is not None:
-                            arr.append([float(price), float(qty)])
+                        price = (el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value"))
+                    qty = (el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume"))
+                    if price is not None and qty is not None:
+                        arr.append([float(price), float(qty)])
             # очистим None и отсортируем
             arr = [x for x in arr if x[0] is not None and x[1] is not None]
             return sorted(arr, key=lambda x: x[0], reverse=reverse)
