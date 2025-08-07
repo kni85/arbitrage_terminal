@@ -60,6 +60,7 @@ HTML_PAGE = """
         <button id="btnTab3">order</button>
         <button id="btnTab4">assets_codes</button>
         <button id="btnTab5">pair_arbitrage</button>
+        <button id="btnTab6">accounts_codes</button>
     </div>
 
     <!-- Tab 1: Asset 1 quotes -->
@@ -160,6 +161,8 @@ HTML_PAGE = """
                 <tr>
                     <th data-col="asset_1">asset_1</th>
                     <th data-col="asset_2">asset_2</th>
+                    <th data-col="account_1">account_1</th>
+                    <th data-col="account_2">account_2</th>
                     <th data-col="side_1">side_1</th>
                     <th data-col="side_2">side_2</th>
                     <th data-col="qty_ratio_1">qty_ratio_1</th>
@@ -177,10 +180,32 @@ HTML_PAGE = """
         </table>
     </div>
 
+    <!-- Tab 6: Accounts codes directory -->
+    <div id="tab6" class="tab-content">
+        <h3>Accounts codes directory</h3>
+        <table id="accounts_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th>System Code</th>
+                    <th>Broker</th>
+                    <th>ACCOUNT</th>
+                    <th>CLIENT</th>
+                </tr>
+            </thead>
+            <tbody id="accounts_tbody"></tbody>
+        </table>
+    </div>
+
     <!-- Context menu for assets table -->
     <div id="assets_menu" class="context-menu">
         <button id="menu_add">Add row</button>
         <button id="menu_del">Delete row</button>
+    </div>
+
+    <!-- Context menu for accounts table -->
+    <div id="accounts_menu" class="context-menu">
+        <button id="accounts_add">Add row</button>
+        <button id="accounts_del">Delete row</button>
     </div>
 
     <!-- Context menu for pairs table -->
@@ -191,7 +216,7 @@ HTML_PAGE = """
 
 <script>
 // ---------------- Tabs switching ---------------------------
-const TAB_NAMES = {1:'asset_1',2:'asset_2',3:'order',4:'assets_codes',5:'pair_arbitrage'};
+const TAB_NAMES = {1:'asset_1',2:'asset_2',3:'order',4:'assets_codes',5:'pair_arbitrage',6:'accounts_codes'};
 
 function activate(tab){
     document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
@@ -204,6 +229,7 @@ document.getElementById('btnTab2').onclick = ()=>activate(2);
 document.getElementById('btnTab3').onclick = ()=>activate(3);
 document.getElementById('btnTab4').onclick = ()=>activate(4);
 document.getElementById('btnTab5').onclick = ()=>activate(5);
+document.getElementById('btnTab6').onclick = ()=>activate(6);
 
 // ---------------- Quotes tabs factory ----------------------
 function init(prefix){
@@ -420,7 +446,69 @@ document.getElementById('menu_del').onclick = ()=>{
     menu.style.display='none';
 };
 
-// ---------------- Pair arbitrage table ----------------------
+ // ---------------- Accounts codes table ----------------------
+ const accountsTbody = document.getElementById('accounts_tbody');
+ const accountsMenu  = document.getElementById('accounts_menu');
+ let currentAccRow = null;
+
+ // Hide menu on any click outside
+ document.body.addEventListener('click', ()=> accountsMenu.style.display='none');
+
+ // Show menu on right click inside table
+ document.getElementById('accounts_table').addEventListener('contextmenu', (e)=>{
+     e.preventDefault();
+     currentAccRow = e.target.closest('tbody tr');
+     accountsMenu.style.top = e.pageY + 'px';
+     accountsMenu.style.left = e.pageX + 'px';
+     accountsMenu.style.display = 'block';
+ });
+
+ // Add row
+ document.getElementById('accounts_add').onclick = ()=>{
+     const row = accountsTbody.insertRow(-1);
+     for(let i=0;i<4;i++){
+         const cell = row.insertCell(i);
+         cell.contentEditable = 'true';
+     }
+     accountsMenu.style.display='none';
+     saveAccountsTable();
+ };
+
+ // Delete row
+ document.getElementById('accounts_del').onclick = ()=>{
+     if(currentAccRow){
+         currentAccRow.parentNode.removeChild(currentAccRow);
+         currentAccRow = null;
+         saveAccountsTable();
+     }
+     accountsMenu.style.display='none';
+ };
+
+ function saveAccountsTable(){
+     const rows = Array.from(accountsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+     localStorage.setItem('accounts_table', JSON.stringify(rows));
+ }
+
+ function restoreAccountsTable(){
+     const data = localStorage.getItem('accounts_table');
+     if(!data) return;
+     let rows;
+     try { rows = JSON.parse(data);}catch(e){ console.error(e); return; }
+     accountsTbody.innerHTML='';
+     rows.forEach(rowData=>{
+         const row = accountsTbody.insertRow(-1);
+         rowData.forEach(cellText=>{
+             const cell = row.insertCell(-1);
+             cell.textContent = cellText;
+             cell.contentEditable='true';
+             cell.addEventListener('input', saveAccountsTable);
+         });
+     });
+ }
+
+ accountsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAccountsTable(); });
+
+ // ---------------- Pair arbitrage table ----------------------
 const pairsTbody = document.getElementById('pairs_tbody');
 const pairsMenu  = document.getElementById('pairs_menu');
 let currentPairRow = null;
@@ -504,19 +592,21 @@ function addPairsRow(data){
         switch(colId){
             case 'asset_1': td = makeEditable(data?data[0]:''); break;
             case 'asset_2': td = makeEditable(data?data[1]:''); break;
-            case 'side_1': [td,sel1] = makeSelect(data? data[2] || 'BUY':'BUY'); break;
-            case 'side_2': [td,sel2] = makeSelect(data? data[3] || 'BUY':'BUY'); break;
-            case 'qty_ratio_1': td = makeEditable(data?data[4]:''); break;
-            case 'qty_ratio_2': td = makeEditable(data?data[5]:''); break;
-            case 'price_ratio_1': td = makeEditable(data?data[6]:''); break;
-            case 'price_ratio_2': td = makeEditable(data?data[7]:''); break;
-            case 'strategy_name': td = makeEditable(data?data[8]:''); break;
-            case 'price_1': td = document.createElement('td'); td.textContent = data? data[9]||'':''; break;
-            case 'price_2': td = document.createElement('td'); td.textContent = data? data[10]||'':''; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[11]||'':''; break;
+            case 'account_1': td = makeEditable(data?data[2]:''); break;
+            case 'account_2': td = makeEditable(data?data[3]:''); break;
+            case 'side_1': [td,sel1] = makeSelect(data? (data[4] || 'BUY') :'BUY'); break;
+            case 'side_2': [td,sel2] = makeSelect(data? (data[5] || 'BUY') :'BUY'); break;
+            case 'qty_ratio_1': td = makeEditable(data?data[6]:''); break;
+            case 'qty_ratio_2': td = makeEditable(data?data[7]:''); break;
+            case 'price_ratio_1': td = makeEditable(data?data[8]:''); break;
+            case 'price_ratio_2': td = makeEditable(data?data[9]:''); break;
+            case 'strategy_name': td = makeEditable(data?data[10]:''); break;
+            case 'price_1': td = document.createElement('td'); td.textContent = data? data[11]||'' : ''; break;
+            case 'price_2': td = document.createElement('td'); td.textContent = data? data[12]||'' : ''; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[13]||'' : ''; break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[12]: false; td.appendChild(cb);
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[14] : false; td.appendChild(cb);
                 break;
             default:
                 td = document.createElement('td');
@@ -567,7 +657,7 @@ document.getElementById('pairs_del').onclick = ()=>{
 };
 
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','hit_price','get_mdata'];
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','hit_price','get_mdata'];
     const rows = Array.from(pairsTbody.rows).map(r=>{
         return COLS.map(col=>{
             const cell = cellById(r,col);
@@ -749,6 +839,7 @@ assetsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAssets
 window.addEventListener('load', ()=>{
     restoreFields();
     restoreAssetsTable();
+    restoreAccountsTable();
     restorePairsTable();
     restorePairsOrder();
     enablePairsDragDrop();
@@ -791,7 +882,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
 
         def _to_list(raw, reverse=False):
-            # Преобразует в [[price, qty], ...]
+            # Преобразует вход в список пар [price, qty]
             arr = []
             if isinstance(raw, (list, tuple)):
                 for el in raw:
@@ -799,10 +890,11 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                         arr.append([float(el[0]), float(el[1])])
                     elif isinstance(el, dict):
                         price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
-                        qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
+                        qty   = el.get("qty")   or el.get("quantity") or el.get("vol") or el.get("volume")
                         if price is not None and qty is not None:
                             arr.append([float(price), float(qty)])
-                    arr = [x for x in arr if x[0] is not None and x[1] is not None]
+            # очистим None и отсортируем
+            arr = [x for x in arr if x[0] is not None and x[1] is not None]
             return sorted(arr, key=lambda x: x[0], reverse=reverse)
 
         bids = _to_list(bids_raw, reverse=True)
