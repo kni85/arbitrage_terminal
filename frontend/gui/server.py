@@ -1064,8 +1064,40 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     connector.unsubscribe_quotes(*current_sub, quote_callback)
                     current_sub = None
             elif action == "send_pair_order":
-                # Пока простая имитация успешного исполнения пары ордеров
-                await send_json_safe({"type": "pair_order_reply", "row_id": msg.get("row_id"), "ok": True})
+                # Реальная отправка пары рыночных ордеров
+                try:
+                    class_code_1 = msg.get("class_code_1"); sec_code_1 = msg.get("sec_code_1")
+                    class_code_2 = msg.get("class_code_2"); sec_code_2 = msg.get("sec_code_2")
+                    side_1  = msg.get("side_1"); side_2  = msg.get("side_2")
+                    qty1    = int(msg.get("qty_ratio_1",0)); qty2 = int(msg.get("qty_ratio_2",0))
+                    account1= msg.get("account_1"); client1= msg.get("client_code_1")
+                    account2= msg.get("account_2"); client2= msg.get("client_code_2")
+
+                    # генерация TRANS_ID
+                    from backend.trading.order_service import get_next_trans_id
+                    async with AsyncSessionLocal() as db_sess:
+                        trans1 = await get_next_trans_id(db_sess)
+                    async with AsyncSessionLocal() as db_sess:
+                        trans2 = await get_next_trans_id(db_sess)
+
+                    order1 = {
+                        "ACTION":"NEW_ORDER","CLASSCODE":class_code_1,"SECCODE":sec_code_1,
+                        "ACCOUNT":account1,"CLIENT_CODE":client1,"OPERATION": side_1,
+                        "QUANTITY": str(qty1),"PRICE":"0","TYPE":"M","TRANS_ID": str(trans1)
+                    }
+                    order2 = {
+                        "ACTION":"NEW_ORDER","CLASSCODE":class_code_2,"SECCODE":sec_code_2,
+                        "ACCOUNT":account2,"CLIENT_CODE":client2,"OPERATION": side_2,
+                        "QUANTITY": str(qty2),"PRICE":"0","TYPE":"M","TRANS_ID": str(trans2)
+                    }
+                    res1 = await connector.place_market_order(order1)
+                    res2 = await connector.place_market_order(order2)
+                    ok = (str(res1.get("result","0"))!="-1") and (str(res2.get("result","0"))!="-1")
+                    msg_text = "" if ok else f"Order errors: {res1}, {res2}"
+                except Exception as exc:
+                    ok=False; msg_text=str(exc)
+
+                await send_json_safe({"type":"pair_order_reply","row_id": msg.get("row_id"),"ok": ok,"message": msg_text})
 
             elif action == "send_order":
                 order_type = msg.get("order_type", "L")  # 'L' or 'M'
