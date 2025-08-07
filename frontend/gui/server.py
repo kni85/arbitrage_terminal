@@ -169,11 +169,19 @@ HTML_PAGE = """
                     <th data-col="qty_ratio_2">qty_ratio_2</th>
                     <th data-col="price_ratio_1">price_ratio_1</th>
                     <th data-col="price_ratio_2">price_ratio_2</th>
+                    <th data-col="price">price</th>
+                    <th data-col="target_qty">target_qty</th>
+                    <th data-col="exec_price">exec_price</th>
+                    <th data-col="exec_qty">exec_qty</th>
+                    <th data-col="leaves_qty">leaves_qty</th>
                     <th data-col="strategy_name">strategy_name</th>
                     <th data-col="price_1">price_1</th>
                     <th data-col="price_2">price_2</th>
                     <th data-col="hit_price">hit_price</th>
                     <th data-col="get_mdata">get_mdata</th>
+                    <th data-col="reset">reset</th>
+                    <th data-col="started">started</th>
+                    <th data-col="error">error</th>
                 </tr>
             </thead>
             <tbody id="pairs_tbody"></tbody>
@@ -600,14 +608,30 @@ function addPairsRow(data){
             case 'qty_ratio_2': td = makeEditable(data?data[7]:''); break;
             case 'price_ratio_1': td = makeEditable(data?data[8]:''); break;
             case 'price_ratio_2': td = makeEditable(data?data[9]:''); break;
-            case 'strategy_name': td = makeEditable(data?data[10]:''); break;
-            case 'price_1': td = document.createElement('td'); td.textContent = data? data[11]||'' : ''; break;
-            case 'price_2': td = document.createElement('td'); td.textContent = data? data[12]||'' : ''; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[13]||'' : ''; break;
+            case 'price': td = makeEditable(data?data[10]:''); break;
+            case 'target_qty': td = makeEditable(data?data[11]:''); break;
+            case 'exec_price': td = document.createElement('td'); td.textContent = data? data[12]||'' : ''; break;
+            case 'exec_qty': td = document.createElement('td'); td.textContent = data? data[13]||'' : ''; break;
+            case 'leaves_qty': td = document.createElement('td'); td.textContent = data? data[14]||'' : ''; break;
+            case 'strategy_name': td = makeEditable(data?data[15]:''); break;
+            case 'price_1': td = document.createElement('td'); td.textContent = data? data[16]||'' : ''; break;
+            case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[14] : false; td.appendChild(cb);
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[19] : false; td.appendChild(cb);
                 break;
+            case 'reset':
+                td = document.createElement('td');
+                const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
+                btn.addEventListener('click', ()=>{ cellById(row,'exec_price').textContent=''; cellById(row,'exec_qty').textContent=''; cellById(row,'leaves_qty').textContent=''; savePairsTable(); });
+                break;
+            case 'started':
+                td = document.createElement('td');
+                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[21] : false; td.appendChild(chk);
+                chk.addEventListener('change', ()=>{ if(chk.checked){ cellById(row,'error').textContent=''; } savePairsTable(); });
+                break;
+            case 'error': td = document.createElement('td'); td.textContent = data? data[22]||'' : ''; break;
             default:
                 td = document.createElement('td');
         }
@@ -657,7 +681,7 @@ document.getElementById('pairs_del').onclick = ()=>{
 };
 
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','strategy_name','price_1','price_2','hit_price','get_mdata'];
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
     const rows = Array.from(pairsTbody.rows).map(r=>{
         return COLS.map(col=>{
             const cell = cellById(r,col);
@@ -665,8 +689,11 @@ function savePairsTable(){
             if(col.startsWith('side_')){
                 return cell.querySelector('select').value;
             }
-            if(col==='get_mdata'){
+            if(col==='get_mdata' || col==='started'){
                 return cell.querySelector('input').checked;
+            }
+            if(col==='reset'){
+                return '';
             }
             return cell.textContent;
         });
