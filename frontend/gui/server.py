@@ -1048,6 +1048,10 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                 if current_sub:
                     connector.unsubscribe_quotes(*current_sub, quote_callback)
                     current_sub = None
+            elif action == "send_pair_order":
+                # Пока простая имитация успешного исполнения пары ордеров
+                await send_json_safe({"type": "pair_order_reply", "row_id": msg.get("row_id"), "ok": True})
+
             elif action == "send_order":
                 order_type = msg.get("order_type", "L")  # 'L' or 'M'
                 order_data = {
