@@ -116,16 +116,20 @@ HTML_PAGE = """
 
     <!-- Tab 3: Send order -->
     <div id="tab3" class="tab-content">
-        <h3>Send limit order</h3>
+        <h3>Send order</h3>
         <div style="margin-bottom:12px;">
           <label>CLASSCODE:</label><input id="ord_class" value="TQBR" />
           <label>SECCODE:</label><input id="ord_sec" value="SBER" /><br/><br/>
           <label>ACCOUNT:</label><input id="ord_account" />
-          <label>CLIENT:</label><input id="ord_client" /><br/><br/>
+          <label>CLIENT:</label><input id="ord_client" />
+          <label>COMMENT:</label><input id="ord_comment" style="width:200px;" /><br/><br/>
           <label>OPERATION:</label>
-            <select id="ord_side"><option value="B">BUY</option><option value="S">SELL</option></select><br/><br/>
-          <label>PRICE:</label><input id="ord_price" type="number" step="0.01" />
-          <label>QUANTITY:</label><input id="ord_qty" type="number" value="100" />
+            <select id="ord_side"><option value="B">BUY</option><option value="S">SELL</option></select>
+          <label>TYPE:</label>
+            <select id="ord_type"><option value="L">LIM</option><option value="M">MKT</option></select><br/><br/>
+          <label>PRICE:</label><input id="ord_price" type="number" step="0.0001" />
+          <label>QUANTITY:</label><input id="ord_qty" type="number" value="100" /><br/><br/>
+          
         </div>
         <button id="ord_send">Send Order</button>
         <pre id="ord_result" style="margin-top:14px;background:#f8f8f8;padding:8px;"></pre>
@@ -333,17 +337,35 @@ init('c2');
 // ---------------- Order sending ----------------------------
 const btnSend = document.getElementById('ord_send');
 let wsOrder = null;
+
+// Disable PRICE input for market orders
+const typeSel = document.getElementById('ord_type');
+const priceInp = document.getElementById('ord_price');
+function togglePrice(){ priceInp.disabled = typeSel.value === 'M'; }
+typeSel.onchange = togglePrice;
+togglePrice();
+
 btnSend.onclick = () => {
     const classcode = document.getElementById('ord_class').value.trim();
     const seccode   = document.getElementById('ord_sec').value.trim();
     const account   = document.getElementById('ord_account').value.trim();
     const client    = document.getElementById('ord_client').value.trim();
+    const comment   = document.getElementById('ord_comment').value.trim();
     const side      = document.getElementById('ord_side').value;
-    const price     = parseFloat(document.getElementById('ord_price').value);
+    const ordType   = typeSel.value; // 'L' or 'M'
+    const priceStr  = priceInp.value;
+    const priceVal  = parseFloat(priceStr);
     const qty       = parseInt(document.getElementById('ord_qty').value);
-    if(!classcode||!seccode||!price||!qty){alert('Fill CLASSCODE, SECCODE, PRICE, QUANTITY');return;}
 
-    const payload = {action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:client, operation:side, price:price, quantity:qty };
+    if(!classcode||!seccode||!client||!qty){alert('Fill CLASSCODE, SECCODE, CLIENT, QUANTITY');return;}
+    if(ordType==='L' && !priceStr){alert('Fill PRICE for limit order');return;}
+
+    // Формируем client_code с комментариям: client//comment  или client/
+    const clientCombined = comment ? `${client}//${comment}` : `${client}/`;
+
+    const payload = {action:'send_order', class_code:classcode, sec_code:seccode, account:account, client_code:clientCombined, operation:side, order_type:ordType, quantity:qty };
+    if(ordType==='L'){ payload.price = priceVal; }
+
 
     if(!wsOrder||wsOrder.readyState!==1){
         wsOrder = new WebSocket(`ws://${location.host}/ws`);
@@ -780,7 +802,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                         qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
                         if price is not None and qty is not None:
                             arr.append([float(price), float(qty)])
-                arr = [x for x in arr if x[0] is not None and x[1] is not None]
+                    arr = [x for x in arr if x[0] is not None and x[1] is not None]
             return sorted(arr, key=lambda x: x[0], reverse=reverse)
 
         bids = _to_list(bids_raw, reverse=True)
@@ -811,7 +833,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     connector.unsubscribe_quotes(*current_sub, quote_callback)
                     current_sub = None
             elif action == "send_order":
-                # Формируем транзакцию NEW_ORDER
+                order_type = msg.get("order_type", "L")  # 'L' or 'M'
                 order_data = {
                     "ACTION": "NEW_ORDER",
                     "CLASSCODE": msg.get("class_code"),
@@ -819,9 +841,17 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     "ACCOUNT": msg.get("account"),
                     "CLIENT_CODE": msg.get("client_code"),
                     "OPERATION": msg.get("operation"),  # 'B' / 'S'
-                    "PRICE": str(msg.get("price")),
                     "QUANTITY": str(msg.get("quantity")),
                 }
+
+                if order_type == "M":
+                    order_data["PRICE"] = "0"
+                    order_data["TYPE"] = "M"
+                else:
+                    order_data["PRICE"] = str(msg.get("price"))
+                    order_data["TYPE"] = "L"
+
+                
 
                 # генерируем TRANS_ID через сервис
                 from sqlalchemy.ext.asyncio import AsyncSession
@@ -831,7 +861,10 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                 order_data["TRANS_ID"] = str(next_id)
 
                 # Отправляем напрямую через connector
-                resp = await connector.place_limit_order(order_data)
+                if order_type == "M":
+                    resp = await connector.place_market_order(order_data)
+                else:
+                    resp = await connector.place_limit_order(order_data)
 
                 await send_json_safe({"type": "order_reply", "data": resp})
     except WebSocketDisconnect:
