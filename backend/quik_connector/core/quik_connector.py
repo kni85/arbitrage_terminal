@@ -284,7 +284,7 @@ class QuikConnector:
             try:
                 self._event_queue.put_nowait(error_event)
             except asyncio.QueueFull:
-                logger.warning("Event queue full — dropping error event")
+                logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]:
@@ -298,7 +298,7 @@ class QuikConnector:
             try:
                 self._event_queue.put_nowait(error_event)
             except asyncio.QueueFull:
-                logger.warning("Event queue full — dropping error event")
+                logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
     async def cancel_order(
@@ -327,7 +327,7 @@ class QuikConnector:
             try:
                 self._event_queue.put_nowait(error_event)
             except asyncio.QueueFull:
-                logger.warning("Event queue full — dropping error event")
+                logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
     async def modify_order(
@@ -381,7 +381,7 @@ class QuikConnector:
             try:
                 self._event_queue.put_nowait(error_event)
             except asyncio.QueueFull:
-                logger.warning("Event queue full — dropping error event")
+                logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
     # ------------------------------------------------------------------
@@ -404,7 +404,7 @@ class QuikConnector:
                 try:
                     self._event_queue.put_nowait(quote)
                 except asyncio.QueueFull:
-                    logger.warning("Event queue full — dropping quote")
+                    logger.debug("Event queue full — dropping quote")
 
                 for cb in callbacks:
                     try:
@@ -461,7 +461,7 @@ class QuikConnector:
         try:
             self._event_queue.put_nowait(payload)
         except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping quote event")
+            logger.debug("Event queue full — dropping quote event")
 
         # Рассылаем всем callback-ам, подписанным на инструмент
         callbacks = self._quote_callbacks.get(key, [])
