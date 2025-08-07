@@ -784,19 +784,34 @@ function checkRowForTrade(row){
     }
 }
 
+function lookupAccount(alias){
+    const data = localStorage.getItem('accounts_table');
+    if(!data) return null;
+    let rows; try{ rows = JSON.parse(data);}catch(e){return null;}
+    for(const r of rows){ if(r[0]===alias){ return {account:r[2], client:r[3]}; } }
+    return null;
+}
+
 function sendPairOrder(row){
     row._inFlight = true;
+    const alias1 = cellById(row,'asset_1').textContent.trim();
+    const alias2 = cellById(row,'asset_2').textContent.trim();
+    const cfg1 = lookupClassSec(alias1) || {};
+    const cfg2 = lookupClassSec(alias2) || {};
+    const acc1 = lookupAccount(cellById(row,'account_1').textContent.trim()) || {};
+    const acc2 = lookupAccount(cellById(row,'account_2').textContent.trim()) || {};
+
     const payload = {
         action:'send_pair_order',
         row_id: Array.from(pairsTbody.rows).indexOf(row),
-        asset_1: cellById(row,'asset_1').textContent.trim(),
-        asset_2: cellById(row,'asset_2').textContent.trim(),
+        class_code_1: cfg1.classcode, sec_code_1: cfg1.seccode,
+        class_code_2: cfg2.classcode, sec_code_2: cfg2.seccode,
         side_1 : cellById(row,'side_1').querySelector('select').value,
         side_2 : cellById(row,'side_2').querySelector('select').value,
         qty_ratio_1: parseFloat(cellById(row,'qty_ratio_1').textContent)||0,
         qty_ratio_2: parseFloat(cellById(row,'qty_ratio_2').textContent)||0,
-        account_1: cellById(row,'account_1').textContent.trim(),
-        account_2: cellById(row,'account_2').textContent.trim(),
+        account_1: acc1.account, client_code_1: acc1.client,
+        account_2: acc2.account, client_code_2: acc2.client,
     };
     // отправляем через общий wsOrder (создан ранее)
     if(!wsOrder||wsOrder.readyState!==1){
