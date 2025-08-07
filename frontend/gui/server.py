@@ -535,6 +535,13 @@ function cellById(row,id){
     return idx>=0 ? row.cells[idx] : null;
 }
 
+function updateLeaves(row){
+    const tgt = parseInt(cellById(row,'target_qty').textContent)||0;
+    const exec = parseInt(cellById(row,'exec_qty').textContent)||0;
+    const leaves = tgt - exec;
+    cellById(row,'leaves_qty').textContent = leaves>0? leaves.toString(): (tgt? '0':'');
+}
+
 function updateHitPrice(row){
     const p1 = parseFloat(cellById(row,'price_1').textContent)||0;
     const p2 = parseFloat(cellById(row,'price_2').textContent)||0;
@@ -591,6 +598,7 @@ function addPairsRow(data){
 
     // helpers
     const makeEditable = (value='')=>{ const td=document.createElement('td'); td.contentEditable='true'; td.textContent=value; return td; };
+    const makeReadonly = (value='')=>{ const td=document.createElement('td'); td.textContent=value; return td; };
     const makeSelect = (val)=>{ const td=document.createElement('td'); const s=document.createElement('select'); s.innerHTML='<option value="BUY">BUY</option><option value="SELL">SELL</option>'; s.value=val; td.appendChild(s); return [td,s]; };
 
     let sel1, sel2, cb;
@@ -610,9 +618,9 @@ function addPairsRow(data){
             case 'price_ratio_2': td = makeEditable(data?data[9]:''); break;
             case 'price': td = makeEditable(data?data[10]:''); break;
             case 'target_qty': td = makeEditable(data?data[11]:''); break;
-            case 'exec_price': td = document.createElement('td'); td.textContent = data? data[12]||'' : ''; break;
-            case 'exec_qty': td = document.createElement('td'); td.textContent = data? data[13]||'' : ''; break;
-            case 'leaves_qty': td = document.createElement('td'); td.textContent = data? data[14]||'' : ''; break;
+            case 'exec_price': td = makeReadonly(data? data[12]||'' : ''); break;
+            case 'exec_qty': td = makeReadonly(data? data[13]||'' : '0'); break;
+            case 'leaves_qty': td = makeReadonly(data? data[14]||'' : ''); break;
             case 'strategy_name': td = makeEditable(data?data[15]:''); break;
             case 'price_1': td = document.createElement('td'); td.textContent = data? data[16]||'' : ''; break;
             case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
@@ -624,7 +632,7 @@ function addPairsRow(data){
             case 'reset':
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
-                btn.addEventListener('click', ()=>{ cellById(row,'exec_price').textContent=''; cellById(row,'exec_qty').textContent=''; cellById(row,'leaves_qty').textContent=''; savePairsTable(); });
+                btn.addEventListener('click', ()=>{ cellById(row,'exec_price').textContent=''; cellById(row,'exec_qty').textContent='0'; updateLeaves(row); savePairsTable(); });
                 break;
             case 'started':
                 td = document.createElement('td');
@@ -639,7 +647,7 @@ function addPairsRow(data){
     });
 
     // listeners
-    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row);}));
+    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row); updateLeaves(row);}));
     if(sel1) sel1.addEventListener('change', savePairsTable);
     if(sel2) sel2.addEventListener('change', savePairsTable);
     if(cb){
