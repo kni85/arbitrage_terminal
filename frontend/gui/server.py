@@ -408,6 +408,40 @@ btnSend.onclick = () => {
             const msg = JSON.parse(ev.data);
             if(msg.type==='order_reply'){
                 document.getElementById('ord_result').textContent = JSON.stringify(msg,null,2);
+            } else if(msg.type==='pair_order_reply'){
+                const rowIdx = msg.row_id;
+                const ok = msg.ok;
+                const row = pairsTbody.rows[rowIdx];
+                if(!row) return;
+                row._inFlight=false;
+                if(ok){
+                    // обновляем exec_qty
+                    const execQtyCell = cellById(row,'exec_qty');
+                    const prevQty = parseInt(execQtyCell.textContent)||0;
+                    const newQty = prevQty+1;
+                    execQtyCell.textContent = newQty.toString();
+                    // exec_price (среднее) – используем текущий hit_price
+                    const hit = parseFloat(cellById(row,'hit_price').textContent)||0;
+                    const execPriceCell = cellById(row,'exec_price');
+                    const prevPrice = parseFloat(execPriceCell.textContent)||0;
+                    const newPrice = prevQty===0? hit : ((prevPrice*prevQty + hit)/newQty);
+                    execPriceCell.textContent = newPrice ? newPrice.toFixed(4): '';
+                    // пересчёт leaves_qty
+                    updateLeaves(row);
+                    // auto-stop
+                    const leaves = parseInt(cellById(row,'leaves_qty').textContent)||0;
+                    if(leaves<=0){
+                        const chk = cellById(row,'started').querySelector('input');
+                        chk.checked=false;
+                        cellById(row,'error').textContent='Bot stopped because leaves_qty is 0';
+                    }
+                } else {
+                    // ошибка – останавливаем бота
+                    const chk = cellById(row,'started').querySelector('input');
+                    chk.checked=false;
+                    cellById(row,'error').textContent = msg.message || 'Order error';
+                }
+                savePairsTable();
             }
         };
         wsOrder.onerror = console.error;
