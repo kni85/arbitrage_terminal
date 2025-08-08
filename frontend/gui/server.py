@@ -42,7 +42,14 @@ HTML_PAGE = """
         /* Assets codes table */
         .codes-table { border-collapse: collapse; margin-top: 18px; }
         .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; }
-        .codes-table th { cursor: move; }
+        .codes-table th { cursor: move; position: relative; }
+
+        /* Fixed row height and single-line cells */
+        .orderbook-table th, .orderbook-table td,
+        .codes-table th, .codes-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; line-height: 26px; }
+
+        /* Column resizer handle */
+        .col-resizer { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
 
         /* Context menu */
         .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
@@ -139,7 +146,7 @@ HTML_PAGE = """
     <!-- Tab 4: Assets codes directory -->
     <div id="tab4" class="tab-content">
         <h3>Assets codes directory</h3>
-        <table id="assets_table" class="codes-table">
+        <table id="assets_table" class="codes-table" style="table-layout:fixed; width:100%">
             <thead>
                 <tr>
                     <th>System Code</th>
@@ -156,7 +163,7 @@ HTML_PAGE = """
     <!-- Tab 5: Pair arbitrage -->
     <div id="tab5" class="tab-content">
         <h3>Pair arbitrage configurations</h3>
-        <table id="pairs_table" class="codes-table">
+        <table id="pairs_table" class="codes-table" style="table-layout:fixed; width:100%">
             <thead>
                 <tr>
                     <th data-col="asset_1">asset_1</th>
@@ -191,7 +198,7 @@ HTML_PAGE = """
     <!-- Tab 6: Accounts codes directory -->
     <div id="tab6" class="tab-content">
         <h3>Accounts codes directory</h3>
-        <table id="accounts_table" class="codes-table">
+        <table id="accounts_table" class="codes-table" style="table-layout:fixed; width:100%">
             <thead>
                 <tr>
                     <th>System Code</th>
@@ -808,6 +815,8 @@ function restorePairsTable(){
     try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
     pairsTbody.innerHTML='';
     rows.forEach(rowData=> addPairsRow(rowData));
+    // после восстановления данных восстановим ширины столбцов
+    restorePairsWidths();
 }
 
 // On-the-fly input
@@ -931,7 +940,36 @@ function enablePairsDragDrop(){
             savePairsTable();
             savePairsOrder();
         });
+
+        // Add column resizer
+        const resizer = document.createElement('div');
+        resizer.className = 'col-resizer';
+        th.appendChild(resizer);
+        let startX = 0; let startWidth = 0;
+        const onMouseMove = (ev)=>{
+            const dx = ev.clientX - startX;
+            const newWidth = Math.max(40, startWidth + dx);
+            th.style.width = newWidth + 'px';
+            // apply width to all cells in this column
+            const idx = th.cellIndex;
+            document.querySelectorAll('#pairs_table tr').forEach(tr=>{
+                if(tr.cells[idx]) tr.cells[idx].style.width = newWidth + 'px';
+            });
+        };
+        const onMouseUp = ()=>{
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            savePairsWidths();
+        };
+        resizer.addEventListener('mousedown', (ev)=>{
+            startX = ev.clientX;
+            startWidth = th.getBoundingClientRect().width;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
     });
+    // При инициализации, если есть сохранённые ширины – применим
+    restorePairsWidths();
 }
 
 function movePairsColumn(from, to){
@@ -960,6 +998,32 @@ function restorePairsOrder(){
         if(cur>=0 && cur!==targetIdx){
             movePairsColumn(cur, targetIdx);
         }
+    });
+}
+
+function savePairsWidths(){
+    const widths = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=> th.getBoundingClientRect().width);
+    localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+}
+
+function restorePairsWidths(){
+    const saved = localStorage.getItem('pairs_col_widths');
+    if(!saved) return;
+    let widths; try{ widths = JSON.parse(saved);}catch(e){ return; }
+    const ths = document.querySelectorAll('#pairs_table thead th');
+    widths.forEach((w, idx)=>{
+        const width = Math.max(40, parseInt(w)||0);
+        if(ths[idx]){
+            ths[idx].style.width = width+'px';
+        }
+    });
+    // apply to body cells
+    const rows = document.querySelectorAll('#pairs_table tbody tr');
+    rows.forEach(tr=>{
+        widths.forEach((w, idx)=>{
+            const width = Math.max(40, parseInt(w)||0);
+            if(tr.cells[idx]) tr.cells[idx].style.width = width+'px';
+        });
     });
 }
 
