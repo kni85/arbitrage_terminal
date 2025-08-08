@@ -1077,8 +1077,7 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     from backend.trading.order_service import get_next_trans_id
                     async with AsyncSessionLocal() as db_sess:
                         trans1 = await get_next_trans_id(db_sess)
-                    async with AsyncSessionLocal() as db_sess:
-                        trans2 = await get_next_trans_id(db_sess)
+                        trans2 = trans1 + 1
 
                     order1 = {
                         "ACTION":"NEW_ORDER","CLASSCODE":class_code_1,"SECCODE":sec_code_1,
@@ -1092,6 +1091,8 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     }
                     res1 = await connector.place_market_order(order1)
                     res2 = await connector.place_market_order(order2)
+                    print(f"PAIR_ORDER result1: {res1}")
+                    print(f"PAIR_ORDER result2: {res2}")
                     ok = (str(res1.get("result","0"))!="-1") and (str(res2.get("result","0"))!="-1")
                     msg_text = "" if ok else f"Order errors: {res1}, {res2}"
                 except Exception as exc:
