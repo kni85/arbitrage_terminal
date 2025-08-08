@@ -442,6 +442,8 @@ btnSend.onclick = () => {
                     cellById(row,'error').textContent = msg.message || 'Order error';
                 }
                 savePairsTable();
+                // Немедленно проверяем возможность взять следующий лот
+                checkRowForTrade(row);
             }
         };
         wsOrder.onerror = console.error;
