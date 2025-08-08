@@ -479,13 +479,47 @@ document.getElementById('assets_table').addEventListener('contextmenu', (e)=>{
     menu.style.display = 'block';
 });
 
+function attachEditableHandlers(row, tableType){
+    row.querySelectorAll('td[contenteditable="true"]').forEach(td=>{
+        if(td.dataset.value===undefined){ td.dataset.value = (td.textContent||'').trim(); }
+        td.addEventListener('keydown', (e)=>{
+            if(e.key==='Enter'){
+                e.preventDefault();
+                const newVal = (td.textContent||'').trim();
+                td.textContent = newVal;
+                td.dataset.value = newVal;
+                if(tableType==='pairs'){
+                    const r = row; savePairsTable(); updateHitPrice(r); updateLeaves(r); checkRowForTrade(r);
+                } else if(tableType==='assets'){
+                    saveAssetsTable();
+                } else if(tableType==='accounts'){
+                    saveAccountsTable();
+                }
+                td.blur();
+            }
+        });
+        td.addEventListener('blur', ()=>{
+            const accepted = td.dataset.value||'';
+            const current = (td.textContent||'').trim();
+            if(current!==accepted){ td.textContent = accepted; }
+        });
+    });
+}
+
+function initAssetsRow(row){
+    // ensure 5 editable cells
+    for(let i=0;i<5;i++){
+        const cell = row.cells[i] || row.insertCell(i);
+        cell.contentEditable = 'true';
+        cell.dataset.value = (cell.textContent||'').trim();
+    }
+    attachEditableHandlers(row,'assets');
+}
+
 // Add row
 document.getElementById('menu_add').onclick = ()=>{
     const row = assetsTbody.insertRow(-1);
-    for(let i=0;i<5;i++){
-        const cell = row.insertCell(i);
-        cell.contentEditable = 'true';
-    }
+    initAssetsRow(row);
     menu.style.display='none';
 };
 
@@ -522,7 +556,9 @@ document.getElementById('menu_del').onclick = ()=>{
      for(let i=0;i<4;i++){
          const cell = row.insertCell(i);
          cell.contentEditable = 'true';
+         cell.dataset.value = (cell.textContent||'').trim();
      }
+     attachEditableHandlers(row,'accounts');
      accountsMenu.style.display='none';
      saveAccountsTable();
  };
@@ -554,12 +590,13 @@ document.getElementById('menu_del').onclick = ()=>{
              const cell = row.insertCell(-1);
              cell.textContent = cellText;
              cell.contentEditable='true';
-             cell.addEventListener('input', saveAccountsTable);
+             cell.dataset.value = (cellText||'').trim();
          });
+         attachEditableHandlers(row,'accounts');
      });
  }
 
- accountsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAccountsTable(); });
+ // Изменения принимаются по Enter в ячейке
 
  // ---------------- Pair arbitrage table ----------------------
 const pairsTbody = document.getElementById('pairs_tbody');
@@ -701,8 +738,8 @@ function addPairsRow(data){
         row.appendChild(td);
     });
 
-    // listeners
-    row.querySelectorAll('td[contenteditable="true"]').forEach(c=> c.addEventListener('input', ()=>{ savePairsTable(); updateHitPrice(row); updateLeaves(row); checkRowForTrade(row);}));
+    // listeners (ввод принимается по Enter; см. attachEditableHandlers)
+    attachEditableHandlers(row,'pairs');
     if(sel1) sel1.addEventListener('change', savePairsTable);
     if(sel2) sel2.addEventListener('change', savePairsTable);
     if(cb){
@@ -970,13 +1007,13 @@ function restoreAssetsTable(){
             const cell = row.insertCell(-1);
             cell.textContent = cellText;
             cell.contentEditable = 'true';
-            cell.addEventListener('input', saveAssetsTable);
+            cell.dataset.value = (cellText||'').trim();
         });
+        attachEditableHandlers(row,'assets');
     });
 }
 
-// Attach input listeners to existing table cells (initially none)
-assetsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) saveAssetsTable(); });
+// Attach input listeners removed: изменения принимаются по Enter в ячейке
 
 // On load restore everything
 window.addEventListener('load', ()=>{
