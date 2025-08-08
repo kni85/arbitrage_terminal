@@ -1073,6 +1073,10 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
                     account1= msg.get("account_1"); client1= msg.get("client_code_1")
                     account2= msg.get("account_2"); client2= msg.get("client_code_2")
 
+                    # Приводим стороны к форматам QUIK: 'B' / 'S'
+                    op1 = 'B' if str(side_1).upper().startswith('B') else 'S'
+                    op2 = 'B' if str(side_2).upper().startswith('B') else 'S'
+
                     # генерация TRANS_ID
                     from backend.trading.order_service import get_next_trans_id
                     async with AsyncSessionLocal() as db_sess:
@@ -1081,12 +1085,12 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
 
                     order1 = {
                         "ACTION":"NEW_ORDER","CLASSCODE":class_code_1,"SECCODE":sec_code_1,
-                        "ACCOUNT":account1,"CLIENT_CODE":client1,"OPERATION": side_1,
+                        "ACCOUNT":account1,"CLIENT_CODE":client1,"OPERATION": op1,
                         "QUANTITY": str(qty1),"PRICE":"0","TYPE":"M","TRANS_ID": str(trans1)
                     }
                     order2 = {
                         "ACTION":"NEW_ORDER","CLASSCODE":class_code_2,"SECCODE":sec_code_2,
-                        "ACCOUNT":account2,"CLIENT_CODE":client2,"OPERATION": side_2,
+                        "ACCOUNT":account2,"CLIENT_CODE":client2,"OPERATION": op2,
                         "QUANTITY": str(qty2),"PRICE":"0","TYPE":"M","TRANS_ID": str(trans2)
                     }
                     res1 = await connector.place_market_order(order1)
