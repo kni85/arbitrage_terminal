@@ -41,15 +41,30 @@ HTML_PAGE = """
 
         /* Assets codes table */
         .codes-table { border-collapse: collapse; margin-top: 18px; }
-        .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; }
+        /* парам для корректного ресайза */
+        .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; box-sizing: border-box; min-width: 10px; }
         .codes-table th { cursor: move; position: relative; }
+        /* таблица pair_arbitrage с фиксированной раскладкой; скролл контейнера */
+        #pairs_table { width: max-content; table-layout: fixed; }
+#pairs_table *, #pairs_table col { min-width: 0 !important; }
+        /* ячейки всегда режут содержимое, не растягивая колонку */
+        #pairs_table th, #pairs_table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 !important; }
+        /* внутренние элементы не должны расширять колонку */
+        #pairs_table td select, #pairs_table td button, #pairs_table td input {
+            width: 100%; max-width: 100%; min-width: 0 !important; box-sizing: border-box;
+        }
+        #pairs_table td select {
+            overflow: hidden; text-overflow: ellipsis; appearance: none; -webkit-appearance: none; border: none; background: transparent; padding: 0 0;
+        }
+        #pairs_table td button { overflow: hidden; text-overflow: ellipsis; }
 
         /* Fixed row height and single-line cells */
         .orderbook-table th, .orderbook-table td,
         .codes-table th, .codes-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; line-height: 26px; }
 
         /* Column resizer handle */
-        .col-resizer { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; user-select: none; }
+        .col-resizer { position: absolute; top: 0; right: 0; width: 10px; height: 100%; cursor: col-resize; user-select: none; z-index: 10; }
+        body.resizing { cursor: col-resize !important; user-select: none; }
 
         /* Context menu */
         .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
@@ -146,7 +161,7 @@ HTML_PAGE = """
     <!-- Tab 4: Assets codes directory -->
     <div id="tab4" class="tab-content">
         <h3>Assets codes directory</h3>
-        <table id="assets_table" class="codes-table" style="table-layout:fixed; width:100%">
+        <table id="assets_table" class="codes-table">
             <thead>
                 <tr>
                     <th>System Code</th>
@@ -163,7 +178,7 @@ HTML_PAGE = """
     <!-- Tab 5: Pair arbitrage -->
     <div id="tab5" class="tab-content">
         <h3>Pair arbitrage configurations</h3>
-        <table id="pairs_table" class="codes-table" style="table-layout:fixed; width:100%">
+        <table id="pairs_table" class="codes-table">
             <thead>
                 <tr>
                     <th data-col="asset_1">asset_1</th>
@@ -198,7 +213,7 @@ HTML_PAGE = """
     <!-- Tab 6: Accounts codes directory -->
     <div id="tab6" class="tab-content">
         <h3>Accounts codes directory</h3>
-        <table id="accounts_table" class="codes-table" style="table-layout:fixed; width:100%">
+        <table id="accounts_table" class="codes-table">
             <thead>
                 <tr>
                     <th>System Code</th>
@@ -924,9 +939,24 @@ function connectAsset(row, idx, cfg){
 // ---------- Drag & drop column reorder ----------------------
 function enablePairsDragDrop(){
     const table = document.getElementById('pairs_table');
+    // Ensure a colgroup is present for reliable column width control
+    let colgroup = table.querySelector('colgroup');
+    if(!colgroup){
+        colgroup = document.createElement('colgroup');
+        const thsInit = table.querySelectorAll('thead th');
+        thsInit.forEach(()=>{
+            const col = document.createElement('col');
+            colgroup.appendChild(col);
+        });
+        table.insertBefore(colgroup, table.firstElementChild); // before thead
+    }
     const headers = table.querySelectorAll('thead th');
     headers.forEach(th=>{
         th.draggable = true;
+        // зафиксируем текущую ширину как стартовую, чтобы ресайз был видим
+        const w = th.getBoundingClientRect().width;
+        if(w){ const initW = Math.max(40, Math.floor(w)); th.style.width = initW + 'px'; th.style.maxWidth = initW + 'px'; }
+        th.style.minWidth = '0';
         th.addEventListener('dragstart', e=>{
             e.dataTransfer.setData('colIndex', th.cellIndex);
         });
@@ -948,32 +978,58 @@ function enablePairsDragDrop(){
         let startX = 0; let startWidth = 0;
         const onMouseMove = (ev)=>{
             const dx = ev.clientX - startX;
-            const newWidth = Math.max(40, startWidth + dx);
+            const newWidth = Math.max(10, startWidth + dx);
             th.style.width = newWidth + 'px';
-            // apply width to all cells in this column
+            th.style.maxWidth = newWidth + 'px';
+            th.style.minWidth = '0';
+            // apply width to all body cells too (для корректного min-content браузера)
             const idx = th.cellIndex;
-            document.querySelectorAll('#pairs_table tr').forEach(tr=>{
-                if(tr.cells[idx]) tr.cells[idx].style.width = newWidth + 'px';
+            if(colgroup && colgroup.children[idx]){
+                colgroup.children[idx].style.width = newWidth + 'px';
+            }
+            document.querySelectorAll('#pairs_table tbody tr').forEach(tr=>{
+                if(tr.cells[idx]){
+                    tr.cells[idx].style.width = newWidth + 'px';
+                    tr.cells[idx].style.maxWidth = newWidth + 'px';
+                }
             });
+
         };
         const onMouseUp = ()=>{
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
+            document.body.classList.remove('resizing');
+            th.draggable = true; // вернуть DnD колонок
             savePairsWidths();
         };
         resizer.addEventListener('mousedown', (ev)=>{
+            ev.preventDefault();
+            ev.stopPropagation(); // не даём стартовать DnD заголовка
             startX = ev.clientX;
             startWidth = th.getBoundingClientRect().width;
+            th.draggable = false; // временно выключаем DnD
+            document.body.classList.add('resizing');
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
+        resizer.addEventListener('dragstart', (e)=>{ e.preventDefault(); e.stopPropagation(); });
+        resizer.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); });
     });
     // При инициализации, если есть сохранённые ширины – применим
     restorePairsWidths();
+    // синхронизируем ширины тела при первой загрузке
+    const thsInit = table.querySelectorAll('thead th');
+    const rowsInit = table.querySelectorAll('#pairs_table tbody tr');
+    rowsInit.forEach(tr=>{
+        thsInit.forEach((th, i)=>{
+            if(tr.cells[i]) tr.cells[i].style.width = th.style.width || '';
+        });
+    });
 }
 
 function movePairsColumn(from, to){
     const table = document.getElementById('pairs_table');
+    const colgroup = table.querySelector('colgroup');
     Array.from(table.rows).forEach(row=>{
         if(from < to){
             row.insertBefore(row.cells[from], row.cells[to].nextSibling);
@@ -981,6 +1037,17 @@ function movePairsColumn(from, to){
             row.insertBefore(row.cells[from], row.cells[to]);
         }
     });
+    if(colgroup){
+        const cols = Array.from(colgroup.children);
+        const moving = cols[from];
+        if(moving){
+            if(from < to){
+                colgroup.insertBefore(moving, cols[to+1] || null);
+            } else {
+                colgroup.insertBefore(moving, cols[to] || null);
+            }
+        }
+    }
 }
 
 function savePairsOrder(){
@@ -1011,20 +1078,21 @@ function restorePairsWidths(){
     if(!saved) return;
     let widths; try{ widths = JSON.parse(saved);}catch(e){ return; }
     const ths = document.querySelectorAll('#pairs_table thead th');
+    const table = document.getElementById('pairs_table');
+    const colgroup = table.querySelector('colgroup');
     widths.forEach((w, idx)=>{
-        const width = Math.max(40, parseInt(w)||0);
+        const width = Math.max(10, parseInt(w)||0);
         if(ths[idx]){
             ths[idx].style.width = width+'px';
+            ths[idx].style.maxWidth = width+'px';
+            ths[idx].style.minWidth = '0';
+        }
+        if(colgroup && colgroup.children[idx]){
+            colgroup.children[idx].style.width = width+'px';
         }
     });
     // apply to body cells
-    const rows = document.querySelectorAll('#pairs_table tbody tr');
-    rows.forEach(tr=>{
-        widths.forEach((w, idx)=>{
-            const width = Math.max(40, parseInt(w)||0);
-            if(tr.cells[idx]) tr.cells[idx].style.width = width+'px';
-        });
-    });
+
 }
 
 // ---------------- Persistence (localStorage) --------------
@@ -1126,22 +1194,28 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
 
         def _to_list(raw, reverse=False):
-            # Преобразует вход в список пар [price, qty]
-            arr = []
+            """Преобразует вход (список уровней стакана в разных форматах) в [[price, qty], ...]"""
+            parsed = []
             if isinstance(raw, (list, tuple)):
                 for el in raw:
+                    # Формат [price, qty]
                     if isinstance(el, (list, tuple)) and len(el) >= 2:
-                        arr.append([float(el[0]), float(el[1])])
+                        try:
+                            parsed.append([float(el[0]), float(el[1])])
+                        except (TypeError, ValueError):
+                            continue
+                    # Формат {price: .., qty: ..}
                     elif isinstance(el, dict):
-                        price = (
-                            el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
-                        )
+                        price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
                         qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
-                        if price is not None and qty is not None:
-                            arr.append([float(price), float(qty)])
-            # очистим None и отсортируем
-            arr = [x for x in arr if x[0] is not None and x[1] is not None]
-            return sorted(arr, key=lambda x: x[0], reverse=reverse)
+                        try:
+                            if price is not None and qty is not None:
+                                parsed.append([float(price), float(qty)])
+                        except (TypeError, ValueError):
+                            continue
+            # сортируем и возвращаем
+            parsed = [x for x in parsed if x[0] is not None and x[1] is not None]
+            return sorted(parsed, key=lambda x: x[0], reverse=reverse)
 
         bids = _to_list(bids_raw, reverse=True)
         asks = _to_list(asks_raw, reverse=False)
