@@ -8,8 +8,18 @@ from fastapi.responses import HTMLResponse
 
 from backend.quik_connector.core.quik_connector import QuikConnector
 from backend.quik_connector.db.database import AsyncSessionLocal
+from backend.quik_connector.db.database import ensure_tables_exist  # новая строка: импорт
 
 app = FastAPI(title="QUIK Quotes GUI")
+
+# ---------------------------------------------------------------------------
+# Гарантируем, что таблицы БД созданы до первого обращения
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def _startup_init_db() -> None:  # noqa: D401 – простая функция-хук
+    """Создать таблицы, если база ещё пустая (лениво, idempotent)."""
+    await ensure_tables_exist()
 
 # ---------------------------------------------------------------------------
 # Встраиваем простую HTML-страницу (без шаблонов), JS внутри
