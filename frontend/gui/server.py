@@ -1194,26 +1194,34 @@ async def ws_quotes(ws: WebSocket):  # noqa: D401
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
 
         def _to_list(raw, reverse=False):
-            """Преобразует вход (список уровней стакана в разных форматах) в [[price, qty], ...]"""
+            """Преобразует вход (список уровней стакана в разных форматах)
+            в список вида [[price, qty], ...]"""
+
             parsed = []
-            if isinstance(raw, (list, tuple)):
-                for el in raw:
-                    # Формат [price, qty]
-                    if isinstance(el, (list, tuple)) and len(el) >= 2:
-                        try:
-                            parsed.append([float(el[0]), float(el[1])])
-                        except (TypeError, ValueError):
-                            continue
-                    # Формат {price: .., qty: ..}
+
+            # Ожидаем список / кортеж; иначе возвращаем пустой массив
+            if not isinstance(raw, (list, tuple)):
+                return parsed
+
+            for el in raw:
+                # Формат [price, qty]
+                if isinstance(el, (list, tuple)) and len(el) >= 2:
+                    try:
+                        parsed.append([float(el[0]), float(el[1])])
+                    except (TypeError, ValueError):
+                        continue
+
+                # Формат {price: .., qty: ..}
                 elif isinstance(el, dict):
-                        price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
-                        qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
-                        try:
-                            if price is not None and qty is not None:
-                                parsed.append([float(price), float(qty)])
-                        except (TypeError, ValueError):
-                            continue
-            # сортируем и возвращаем
+                    price = el.get("price") or el.get("p") or el.get("bid") or el.get("offer") or el.get("value")
+                    qty = el.get("qty") or el.get("quantity") or el.get("vol") or el.get("volume")
+                    try:
+                        if price is not None and qty is not None:
+                            parsed.append([float(price), float(qty)])
+                    except (TypeError, ValueError):
+                        continue
+
+            # фильтруем None и сортируем
             parsed = [x for x in parsed if x[0] is not None and x[1] is not None]
             return sorted(parsed, key=lambda x: x[0], reverse=reverse)
 
