@@ -10,8 +10,10 @@ from typing import Any, Callable, Dict, Tuple
 
 from infra.quik_adapter import QuikBrokerAdapter
 from core.broker import Broker
+# for TRANS_ID generation and mapping
 from db.database import AsyncSessionLocal
 from backend.trading.order_service import get_next_trans_id
+from config import container
 
 # Тип callback котировки
 QuoteCallback = Callable[[Dict[str, Any]], None]
@@ -57,6 +59,13 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
     async with AsyncSessionLocal() as sess:
         next_id = await get_next_trans_id(sess)
     order["TRANS_ID"] = str(next_id)
+
+    # --- register mapping in OrderManager so callbacks find ORM ----
+    try:
+        om = container.order_manager()
+        om._register_trans_mapping(next_id, -1)  # -1: no ORM row yet
+    except Exception:
+        pass
 
     broker = broker or _default_broker
     if order_type == "M":
