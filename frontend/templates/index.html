@@ -7,6 +7,7 @@
         body { font-family: Arial, sans-serif; margin: 40px; }
         label { display: inline-block; width: 88px; }
         input { width: 100px; margin-right: 10px; }
+
         /* Order-book tables */
         .orderbook-table { border-collapse: collapse; margin-top: 18px; }
         .orderbook-table th, .orderbook-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: right; font-size: 1.1em; }
@@ -14,27 +15,40 @@
         .orderbook-table td.price { font-weight: bold; background: #f8f8ff; }
         .orderbook-table td.buy { color: #1a7f37; }
         .orderbook-table td.sell { color: #b22222; }
+
         /* Generic */
         button { padding: 6px 14px; margin-right: 6px; }
         .tabs button { padding: 6px 18px; margin-right: 8px; }
         .tab-content { display: none; margin-top: 18px; }
         .tab-content.active { display: block; }
+
         /* Assets codes table */
         .codes-table { border-collapse: collapse; margin-top: 18px; }
+        /* парам для корректного ресайза */
         .codes-table th, .codes-table td { border: 1px solid #aaa; padding: 4px 10px; text-align: left; box-sizing: border-box; min-width: 10px; }
         .codes-table th { cursor: move; position: relative; }
-        /* pair_arbitrage fixed layout */
+        /* таблица pair_arbitrage с фиксированной раскладкой; скролл контейнера */
         #pairs_table { width: max-content; table-layout: fixed; }
-        #pairs_table *, #pairs_table col { min-width: 0 !important; }
+#pairs_table *, #pairs_table col { min-width: 0 !important; }
+        /* ячейки всегда режут содержимое, не растягивая колонку */
         #pairs_table th, #pairs_table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 !important; }
-        #pairs_table td select, #pairs_table td button, #pairs_table td input { width: 100%; max-width: 100%; min-width: 0 !important; box-sizing: border-box; }
-        #pairs_table td select { overflow: hidden; text-overflow: ellipsis; appearance: none; -webkit-appearance: none; border: none; background: transparent; padding: 0 0; }
+        /* внутренние элементы не должны расширять колонку */
+        #pairs_table td select, #pairs_table td button, #pairs_table td input {
+            width: 100%; max-width: 100%; min-width: 0 !important; box-sizing: border-box;
+        }
+        #pairs_table td select {
+            overflow: hidden; text-overflow: ellipsis; appearance: none; -webkit-appearance: none; border: none; background: transparent; padding: 0 0;
+        }
         #pairs_table td button { overflow: hidden; text-overflow: ellipsis; }
-        /* Fixed row height */
-        .orderbook-table th, .orderbook-table td, .codes-table th, .codes-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; line-height: 26px; }
+
+        /* Fixed row height and single-line cells */
+        .orderbook-table th, .orderbook-table td,
+        .codes-table th, .codes-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; line-height: 26px; }
+
         /* Column resizer handle */
         .col-resizer { position: absolute; top: 0; right: 0; width: 10px; height: 100%; cursor: col-resize; user-select: none; z-index: 10; }
         body.resizing { cursor: col-resize !important; user-select: none; }
+
         /* Context menu */
         .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
         .context-menu button { display: block; width: 100%; padding: 4px 10px; border: none; background: none; text-align: left; }
@@ -42,7 +56,177 @@
     </style>
 </head>
 <body>
-    <!-- content truncated due to length; identical to HTML_PAGE in server.py -->
+    <h2 id="page_title">asset_1</h2>
+
+    <!-- Tabs navigation -->
+    <div class="tabs">
+        <button id="btnTab1">asset_1</button>
+        <button id="btnTab2">asset_2</button>
+        <button id="btnTab3">order</button>
+        <button id="btnTab4">assets_codes</button>
+        <button id="btnTab5">pair_arbitrage</button>
+        <button id="btnTab6">accounts_codes</button>
+    </div>
+
+    <!-- Tab 1: Asset 1 quotes -->
+    <div id="tab1" class="tab-content active">
+        <div>
+            <label>CLASSCODE:</label><input id="c1_class" value="TQBR" />
+            <label>SECCODE:</label><input id="c1_sec" value="SBER" />
+            <button id="c1_start">Start</button>
+            <button id="c1_stop" disabled>Stop</button>
+        </div>
+        <div style="margin-bottom:10px;">
+          <input id="c1_qty_sell" type="number" value="100" style="width:90px;"/>
+          <output id="c1_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
+          <output id="c1_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
+          <input id="c1_qty_buy" type="number" value="100" style="width:90px;"/>
+        </div>
+        <div class="quotes">
+            <table class="orderbook-table" id="c1_ob">
+                <thead>
+                    <tr>
+                        <th>Lots (buy)</th><th>Price (buy)</th><th>Price (sell)</th><th>Lots (sell)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab 2: Asset 2 quotes -->
+    <div id="tab2" class="tab-content">
+    <div>
+            <label>CLASSCODE:</label><input id="c2_class" value="TQBR" />
+            <label>SECCODE:</label><input id="c2_sec" value="GAZP" />
+            <button id="c2_start">Start</button>
+            <button id="c2_stop" disabled>Stop</button>
+        </div>
+        <div style="margin-bottom:10px;">
+          <input id="c2_qty_sell" type="number" value="100" style="width:90px;"/>
+          <output id="c2_avg_sell" style="width:110px;display:inline-block;text-align:right;"></output>
+          <output id="c2_avg_buy" style="width:110px;display:inline-block;text-align:right;"></output>
+          <input id="c2_qty_buy" type="number" value="100" style="width:90px;"/>
+        </div>
+        <div class="quotes">
+            <table class="orderbook-table" id="c2_ob">
+                <thead>
+                    <tr>
+                        <th>Lots (buy)</th><th>Price (buy)</th><th>Price (sell)</th><th>Lots (sell)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab 3: Send order -->
+    <div id="tab3" class="tab-content">
+        <h3>Send order</h3>
+        <div style="margin-bottom:12px;">
+          <label>CLASSCODE:</label><input id="ord_class" value="TQBR" />
+          <label>SECCODE:</label><input id="ord_sec" value="SBER" /><br/><br/>
+          <label>ACCOUNT:</label><input id="ord_account" />
+          <label>CLIENT:</label><input id="ord_client" />
+          <label>COMMENT:</label><input id="ord_comment" style="width:200px;" /><br/><br/>
+          <label>OPERATION:</label>
+            <select id="ord_side"><option value="B">BUY</option><option value="S">SELL</option></select>
+          <label>TYPE:</label>
+            <select id="ord_type"><option value="L">LIM</option><option value="M">MKT</option></select><br/><br/>
+          <label>PRICE:</label><input id="ord_price" type="number" step="0.0001" />
+          <label>QUANTITY:</label><input id="ord_qty" type="number" value="100" /><br/><br/>
+          
+        </div>
+        <button id="ord_send">Send Order</button>
+        <pre id="ord_result" style="margin-top:14px;background:#f8f8f8;padding:8px;"></pre>
+    </div>
+
+    <!-- Tab 4: Assets codes directory -->
+    <div id="tab4" class="tab-content">
+        <h3>Assets codes directory</h3>
+        <table id="assets_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th>System Code</th>
+                    <th>Exchange</th>
+                    <th>CLASSCODE</th>
+                    <th>SECCODE</th>
+                    <th>Price Step</th>
+                </tr>
+            </thead>
+            <tbody id="assets_tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- Tab 5: Pair arbitrage -->
+    <div id="tab5" class="tab-content">
+        <h3>Pair arbitrage configurations</h3>
+        <table id="pairs_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th data-col="asset_1">asset_1</th>
+                    <th data-col="asset_2">asset_2</th>
+                    <th data-col="account_1">account_1</th>
+                    <th data-col="account_2">account_2</th>
+                    <th data-col="side_1">side_1</th>
+                    <th data-col="side_2">side_2</th>
+                    <th data-col="qty_ratio_1">qty_ratio_1</th>
+                    <th data-col="qty_ratio_2">qty_ratio_2</th>
+                    <th data-col="price_ratio_1">price_ratio_1</th>
+                    <th data-col="price_ratio_2">price_ratio_2</th>
+                    <th data-col="price">price</th>
+                    <th data-col="target_qty">target_qty</th>
+                    <th data-col="exec_price">exec_price</th>
+                    <th data-col="exec_qty">exec_qty</th>
+                    <th data-col="leaves_qty">leaves_qty</th>
+                    <th data-col="strategy_name">strategy_name</th>
+                    <th data-col="price_1">price_1</th>
+                    <th data-col="price_2">price_2</th>
+                    <th data-col="hit_price">hit_price</th>
+                    <th data-col="get_mdata">get_mdata</th>
+                    <th data-col="reset">reset</th>
+                    <th data-col="started">started</th>
+                    <th data-col="error">error</th>
+                </tr>
+            </thead>
+            <tbody id="pairs_tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- Tab 6: Accounts codes directory -->
+    <div id="tab6" class="tab-content">
+        <h3>Accounts codes directory</h3>
+        <table id="accounts_table" class="codes-table">
+            <thead>
+                <tr>
+                    <th>System Code</th>
+                    <th>Broker</th>
+                    <th>ACCOUNT</th>
+                    <th>CLIENT</th>
+                </tr>
+            </thead>
+            <tbody id="accounts_tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- Context menu for assets table -->
+    <div id="assets_menu" class="context-menu">
+        <button id="menu_add">Add row</button>
+        <button id="menu_del">Delete row</button>
+    </div>
+
+    <!-- Context menu for accounts table -->
+    <div id="accounts_menu" class="context-menu">
+        <button id="accounts_add">Add row</button>
+        <button id="accounts_del">Delete row</button>
+    </div>
+
+    <!-- Context menu for pairs table -->
+    <div id="pairs_menu" class="context-menu">
+        <button id="pairs_add">Add row</button>
+        <button id="pairs_del">Delete row</button>
+    </div>
+
 <script src="/static/main.js"></script>
 </body>
 </html>
