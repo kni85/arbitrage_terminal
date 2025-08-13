@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dependency_injector import containers, providers
 
-# Adapter: QuikConnector already matches Broker protocol
+# Низкоуровневый коннектор QUIK и высокоуровневый адаптер Broker
 from backend.quik_connector.core.quik_connector import QuikConnector  # type: ignore
+from infra.quik_adapter import QuikBrokerAdapter
 from core.order_manager import OrderManager
 from core.broker import Broker  # noqa: F401 for typing
 from .settings import settings
@@ -17,11 +18,17 @@ class AppContainer(containers.DeclarativeContainer):
     # Настройки доступны как singleton
     config = providers.Object(settings)
 
-    # Брокер (QUIK) — singleton
-    broker = providers.Singleton(
+    # --- Низкоуровневый коннектор (singleton) ---------------------------------
+    _quik_connector = providers.Singleton(
         QuikConnector,
-        host=settings.QUIK_HOST,
-        requests_port=settings.QUIK_PORT,
+        host=config.provided.QUIK_HOST,
+        requests_port=config.provided.QUIK_PORT,
+    )
+
+    # --- Высокоуровневый адаптер, удовлетворяющий интерфейсу Broker ----------
+    broker: providers.Provider[Broker] = providers.Singleton(
+        QuikBrokerAdapter,
+        connector=_quik_connector,
     )
 
     # OrderManager — зависит от broker (пока OrderManager внутри сам берёт QuikConnector, но на будущее)
