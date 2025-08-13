@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dependency_injector import containers, providers
 
+# Adapter: QuikConnector already matches Broker protocol
 from backend.quik_connector.core.quik_connector import QuikConnector  # type: ignore
 from core.order_manager import OrderManager
+from core.broker import Broker  # noqa: F401 for typing
 from .settings import settings
 
 

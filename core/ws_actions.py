@@ -9,6 +9,7 @@ import asyncio
 from typing import Any, Callable, Dict, Tuple
 
 from backend.quik_connector.core.quik_connector import QuikConnector  # type: ignore
+from core.broker import Broker
 from db.database import AsyncSessionLocal
 from backend.trading.order_service import get_next_trans_id
 
@@ -23,12 +24,12 @@ QuoteCallback = Callable[[Dict[str, Any]], None]
 _connector = QuikConnector()
 
 
-def start_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: QuikConnector | None = None) -> None:  # noqa: D401
+def start_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: Broker | None = None) -> None:  # noqa: D401
     """Подписаться на стакан L2."""
     (broker or _connector).subscribe_quotes(class_code, sec_code, cb)
 
 
-def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: QuikConnector | None = None) -> None:  # noqa: D401
+def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: Broker | None = None) -> None:  # noqa: D401
     (broker or _connector).unsubscribe_quotes(class_code, sec_code, cb)
 
 
@@ -36,7 +37,7 @@ def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: QuikC
 # Отправка одиночного ордера
 # ---------------------------------------------------------------------------
 
-async def send_order(data: Dict[str, Any], broker: QuikConnector | None = None) -> Dict[str, Any]:  # noqa: D401
+async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict[str, Any]:  # noqa: D401
     """Отправляет одиночный лимитный или рыночный ордер через QuikConnector."""
     order_type = data.get("order_type", "L")  # 'L' | 'M'
     order = {
@@ -67,7 +68,7 @@ async def send_order(data: Dict[str, Any], broker: QuikConnector | None = None) 
 # Отправка парного ордера (арбитраж)
 # ---------------------------------------------------------------------------
 
-async def send_pair_order(data: Dict[str, Any], broker: QuikConnector | None = None) -> Tuple[bool, str]:  # noqa: D401
+async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) -> Tuple[bool, str]:  # noqa: D401
     """Отправляет два синхронных рыночных ордера (парный арбитраж)."""
     try:
         class_code_1, sec_code_1 = data["class_code_1"], data["sec_code_1"]
