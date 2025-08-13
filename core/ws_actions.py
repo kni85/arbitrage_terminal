@@ -92,6 +92,14 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         async with AsyncSessionLocal() as sess:
             trans1 = await get_next_trans_id(sess)
             trans2 = trans1 + 1
+
+        # зарегистрируем оба trans_id, чтобы callbacks нашлись
+        try:
+            om = container.order_manager()
+            om._register_trans_mapping(trans1, -1)
+            om._register_trans_mapping(trans2, -1)
+        except Exception:
+            pass
         order1 = {
             "ACTION": "NEW_ORDER","CLASSCODE": class_code_1,"SECCODE": sec_code_1,
             "ACCOUNT": account1,"CLIENT_CODE": client1,"OPERATION": op1,
