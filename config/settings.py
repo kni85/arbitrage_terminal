@@ -6,7 +6,14 @@ from __future__ import annotations
 try:
     from pydantic_settings import BaseSettings  # type: ignore
 except ImportError:  # pragma: no cover – пакет может отсутствовать
-    from pydantic import BaseSettings  # type: ignore
+    # Для окружений, где установлен Pydantic v2 без доп.пакета.
+    from pydantic import BaseModel  # type: ignore
+
+    class BaseSettings(BaseModel):  # type: ignore
+        """Упрощённый fallback, принимающий любые поля."""
+
+        class Config:
+            extra = "allow"
 
 from pydantic import Field
 
