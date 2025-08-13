@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-# Pydantic v2: BaseSettings переехал в пакет pydantic_settings
-from pydantic_settings import BaseSettings
+# Pydantic ≥ 2.5: BaseSettings выделен в отдельный пакет
+try:
+    from pydantic_settings import BaseSettings  # type: ignore
+except ImportError:  # pragma: no cover – пакет может отсутствовать
+    from pydantic import BaseSettings  # type: ignore
+
 from pydantic import Field
 
 
