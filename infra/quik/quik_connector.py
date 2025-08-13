@@ -28,6 +28,7 @@ import asyncio
 import logging
 import threading
 from typing import Any, Callable, Dict, Optional
+from config import container           # контейнер Dependency-Injector
 
 logger = logging.getLogger(__name__)
 
@@ -426,29 +427,22 @@ class QuikConnector:
     # Вызов колбэков для trades и orders (шаблон для интеграции)
     # ------------------------------------------------------------------
     def _on_trade(self, event):
-        from core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trade"
         payload["cmd"] = event.get("cmd")
-        OrderManager._get_instance_for_connector(self).on_trade_event(payload)
+        container.order_manager().on_trade_event(payload)
 
     def _on_order(self, event):
-        # debug logging removed
-        print(f"========== DEBUG OnOrder Event: {event}")
-        logger.warning("DEBUG OnOrder Event: %s", event)
-        from core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "order"
         payload["cmd"] = event.get("cmd")
-        OrderManager._get_instance_for_connector(self).on_order_event(payload)
+        container.order_manager().on_order_event(payload)
 
     def _on_trans_reply(self, event):
-        # debug logging removed
-        from core.order_manager import OrderManager
         payload = event.get("data", event)
         payload["type"] = "trans_reply"
         payload["cmd"] = event.get("cmd")
-        OrderManager._get_instance_for_connector(self).on_trans_reply_event(payload)
+        container.order_manager().on_trans_reply_event(payload)
 
     # ------------------------------------------------------------------
     # Обработчик реальных котировок из QuikPy
