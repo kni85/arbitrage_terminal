@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from config import container
 from backend.api.routes import router as root_router
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Arbitrage Terminal")
 app.container = container  # type: ignore[attr-defined]
+
+# serve static assets for GUI
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 # Wire DI to API modules (after import to avoid circular issues)
 from backend.api import routes as _routes_module, ws as _ws_module  # noqa: E402
