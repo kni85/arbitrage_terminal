@@ -11,7 +11,11 @@ from backend.api.ws import router as ws_router
 from backend.quik_connector.core.quik_connector import QuikConnector
 from db.database import AsyncSessionLocal, ensure_tables_exist
 
+# DI container (для будущих Depends)
+from config import container
+
 app = FastAPI(title="QUIK Quotes GUI")
+app.container = container  # type: ignore[attr-defined]
 app.include_router(root_router)  # корневой маршрут HTML
 app.include_router(ws_router)
 

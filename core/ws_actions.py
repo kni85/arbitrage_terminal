@@ -23,20 +23,20 @@ QuoteCallback = Callable[[Dict[str, Any]], None]
 _connector = QuikConnector()
 
 
-def start_quotes(class_code: str, sec_code: str, cb: QuoteCallback) -> None:  # noqa: D401
+def start_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: QuikConnector | None = None) -> None:  # noqa: D401
     """Подписаться на стакан L2."""
-    _connector.subscribe_quotes(class_code, sec_code, cb)
+    (broker or _connector).subscribe_quotes(class_code, sec_code, cb)
 
 
-def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback) -> None:  # noqa: D401
-    _connector.unsubscribe_quotes(class_code, sec_code, cb)
+def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: QuikConnector | None = None) -> None:  # noqa: D401
+    (broker or _connector).unsubscribe_quotes(class_code, sec_code, cb)
 
 
 # ---------------------------------------------------------------------------
 # Отправка одиночного ордера
 # ---------------------------------------------------------------------------
 
-async def send_order(data: Dict[str, Any]) -> Dict[str, Any]:  # noqa: D401
+async def send_order(data: Dict[str, Any], broker: QuikConnector | None = None) -> Dict[str, Any]:  # noqa: D401
     """Отправляет одиночный лимитный или рыночный ордер через QuikConnector."""
     order_type = data.get("order_type", "L")  # 'L' | 'M'
     order = {
@@ -57,16 +57,17 @@ async def send_order(data: Dict[str, Any]) -> Dict[str, Any]:  # noqa: D401
         next_id = await get_next_trans_id(sess)
     order["TRANS_ID"] = str(next_id)
 
+    broker = broker or _connector
     if order_type == "M":
-        return await _connector.place_market_order(order)  # type: ignore[return-value]
-    return await _connector.place_limit_order(order)  # type: ignore[return-value]
+        return await broker.place_market_order(order)  # type: ignore[return-value]
+    return await broker.place_limit_order(order)  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
 # Отправка парного ордера (арбитраж)
 # ---------------------------------------------------------------------------
 
-async def send_pair_order(data: Dict[str, Any]) -> Tuple[bool, str]:  # noqa: D401
+async def send_pair_order(data: Dict[str, Any], broker: QuikConnector | None = None) -> Tuple[bool, str]:  # noqa: D401
     """Отправляет два синхронных рыночных ордера (парный арбитраж)."""
     try:
         class_code_1, sec_code_1 = data["class_code_1"], data["sec_code_1"]
@@ -91,8 +92,9 @@ async def send_pair_order(data: Dict[str, Any]) -> Tuple[bool, str]:  # noqa: D4
             "ACCOUNT": account2,"CLIENT_CODE": client2,"OPERATION": op2,
             "QUANTITY": str(qty2),"PRICE": "0","TYPE": "M","TRANS_ID": str(trans2),
         }
-        res1 = await _connector.place_market_order(order1)
-        res2 = await _connector.place_market_order(order2)
+        broker = broker or _connector
+        res1 = await broker.place_market_order(order1)
+        res2 = await broker.place_market_order(order2)
         ok = (str(res1.get("result", "0")) != "-1") and (str(res2.get("result", "0")) != "-1")
         msg_text = "" if ok else f"Order errors: {res1}, {res2}"
         return ok, msg_text

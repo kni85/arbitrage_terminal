@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from core import ws_actions as actions
+from config import container
 
 router = APIRouter()
 
@@ -57,6 +58,8 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             send_json_safe({"orderbook": {"bids": bids, "asks": asks}, "time": data.get("time")}),
         )
 
+    broker = container.broker()
+
     try:
         while True:
             msg = await ws.receive_json()
@@ -64,21 +67,21 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             if action == "start":
                 class_code = msg["class_code"].strip(); sec_code = msg["sec_code"].strip()
                 if current_sub:
-                    actions.stop_quotes(*current_sub, quote_callback)
-                actions.start_quotes(class_code, sec_code, quote_callback)
+                    actions.stop_quotes(*current_sub, quote_callback, broker=broker)
+                actions.start_quotes(class_code, sec_code, quote_callback, broker=broker)
                 current_sub = (class_code, sec_code)
             elif action == "stop":
                 if current_sub:
-                    actions.stop_quotes(*current_sub, quote_callback)
+                    actions.stop_quotes(*current_sub, quote_callback, broker=broker)
                     current_sub = None
             elif action == "send_pair_order":
-                ok, msg_text = await actions.send_pair_order(msg)
+                ok, msg_text = await actions.send_pair_order(msg, broker=broker)
                 await send_json_safe({"type": "pair_order_reply", "row_id": msg.get("row_id"), "ok": ok, "message": msg_text})
             elif action == "send_order":
-                resp = await actions.send_order(msg)
+                resp = await actions.send_order(msg, broker=broker)
                 await send_json_safe({"type": "order_reply", "data": resp})
     except WebSocketDisconnect:
         pass
     finally:
         if current_sub:
-            actions.stop_quotes(*current_sub, quote_callback)
+            actions.stop_quotes(*current_sub, quote_callback, broker=broker)
