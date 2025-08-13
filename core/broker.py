@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable, Callable, Any
 
-QuoteCb = Callable[[dict[str, Any]], None]
+# Public callback type
+QuoteCallback = Callable[[dict[str, Any]], None]
+# Backward-compat alias
+QuoteCb = QuoteCallback
 
 
 @runtime_checkable
@@ -12,9 +15,9 @@ class Broker(Protocol):
     """Minimal broker interface used by strategies / services."""
 
     # --- market data
-    def subscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCb) -> None: ...
+    def subscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None: ...
 
-    def unsubscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCb) -> None: ...
+    def unsubscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None: ...
 
     # --- trading
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]: ...
