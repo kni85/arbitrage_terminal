@@ -115,11 +115,17 @@ class QuikConnector:
         self._initialized = True
 
         host_real = host or "127.0.0.1"
-        self._qp: Any = QuikPy(
-            host=host_real,
-            requests_port=requests_port,
-            callbacks_port=callbacks_port,
-        )
+        # Пытаемся подключиться к реальному QuikPy; если соединение отказано –
+        # создаём Dummy-объект (работа офлайн).
+        try:
+            self._qp = QuikPy(
+                host=host_real,
+                requests_port=requests_port,
+                callbacks_port=callbacks_port,
+            )
+        except Exception as exc:  # pragma: no cover – QUIK off
+            logger.warning("QuikPy connection failed (%s) — switching to Dummy", exc)
+            self._qp = QuikPy()  # type: ignore  # Dummy class above
 
         # Определяем, работаем ли мы в режиме заглушки (DummyQuikPy)
         # Если класс QuikPy объявлен в этом же модуле, значит подключение не удалось
