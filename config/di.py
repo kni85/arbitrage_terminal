@@ -14,10 +14,6 @@ from .settings import settings
 class AppContainer(containers.DeclarativeContainer):
     """Описание провайдеров приложения."""
 
-    wiring_config = containers.WiringConfiguration(packages=[
-        "backend.api",
-    ])
-
     # Настройки доступны как singleton
     config = providers.Object(settings)
 

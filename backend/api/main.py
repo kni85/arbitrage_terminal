@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Arbitrage Terminal")
 app.container = container  # type: ignore[attr-defined]
 
+# Wire DI to API modules (after import to avoid circular issues)
+from backend.api import routes as _routes_module, ws as _ws_module  # noqa: E402
+container.wire(modules=[_routes_module, _ws_module])
+
 # Подключаем HTTP и WebSocket маршруты
 app.include_router(root_router)
 app.include_router(ws_router)
