@@ -7,8 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from backend.quik_connector.core.quik_connector import QuikConnector
-from backend.quik_connector.db.database import AsyncSessionLocal
-from backend.quik_connector.db.database import ensure_tables_exist  # новая строка: импорт
+from db.database import AsyncSessionLocal, ensure_tables_exist
 
 app = FastAPI(title="QUIK Quotes GUI")
 

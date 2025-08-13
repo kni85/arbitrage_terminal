@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.quik_connector.db.models import Order  # type: ignore
+from db.models import Order  # type: ignore
 
 __all__ = ["get_next_trans_id"]
 
