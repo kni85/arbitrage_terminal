@@ -5,11 +5,13 @@ from typing import Optional, Tuple
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from backend.api.routes import router as root_router
 
 from backend.quik_connector.core.quik_connector import QuikConnector
 from db.database import AsyncSessionLocal, ensure_tables_exist
 
 app = FastAPI(title="QUIK Quotes GUI")
+app.include_router(root_router)  # корневой маршрут HTML
 
 # ---------------------------------------------------------------------------
 # Гарантируем, что таблицы БД созданы до первого обращения
@@ -1173,12 +1175,6 @@ window.addEventListener('load', ()=>{
 </body>
 </html>
 """
-
-
-@app.get("/", response_class=HTMLResponse)
-async def index() -> HTMLResponse:  # noqa: D401
-    """Главная страница с GUI."""
-    return HTMLResponse(HTML_PAGE)
 
 
 @app.websocket("/ws")
