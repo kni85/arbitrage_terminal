@@ -13,7 +13,9 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 
-from .quik_connector import QuikConnector
+# Интерфейс Broker и его адаптер
+from core.broker import Broker
+from infra.quik_adapter import QuikBrokerAdapter
 from ..db.database import AsyncSessionLocal
 from ..db.models import Order, OrderStatus, Side
 from ..db.models import Instrument
@@ -31,10 +33,26 @@ class OrderManager:
         except (ValueError, TypeError):
             return value
 
-    def __init__(self):
-        self._connector = QuikConnector()
-        # Регистрируем себя в QuikConnector (перезаписываем), чтобы callbacks шли именно в текущий экземпляр
-        self._connector._order_manager_instance = self  # type: ignore[attr-defined]
+    def __init__(self, broker: Broker | None = None):
+        """Создаёт менеджер ордеров.
+
+        Параметр *broker* используется DI-контейнером; при вызове напрямую
+        сохраняем обратную совместимость, создавая адаптер QUIK по умолчанию.
+        """
+        self._broker: Broker = broker or QuikBrokerAdapter()
+
+        # Для обратной совместимости оставляем _connector = _broker
+        # (используется по всему коду ниже)
+        self._connector = self._broker  # type: ignore[assignment]
+
+        # Пробуем зарегистрировать себя в низкоуровневом QuikConnector,
+        # чтобы callbacks OnOrder/OnTrade приходили сюда.
+        underlying_qc = getattr(self._broker, "_connector", None)
+        if underlying_qc is not None:
+            try:
+                underlying_qc._order_manager_instance = self  # type: ignore[attr-defined]
+            except Exception:  # pragma: no cover
+                pass
         # Сохраняем текущий event-loop (нужен для вызовов из CallbackThread)
         try:
             self._loop = asyncio.get_running_loop()

@@ -14,7 +14,6 @@ from config import container
 from backend.api.routes import router as root_router
 from backend.api.ws import router as ws_router
 from db.database import ensure_tables_exist
-from backend.quik_connector.core.quik_connector import QuikConnector  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +40,8 @@ async def _on_startup() -> None:  # noqa: D401
 @app.on_event("shutdown")
 async def _on_shutdown() -> None:  # noqa: D401
     try:
-        qc = QuikConnector._instance  # type: ignore[attr-defined]
-        if qc is not None:
-            qc.close()
+        broker = container.broker()
+        if broker is not None:
+            broker.close()
     except Exception as exc:  # pragma: no cover
         logger.error("Error while shutdown: %s", exc)
