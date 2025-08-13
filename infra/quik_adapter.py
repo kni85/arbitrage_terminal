@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from core.broker import Broker, QuoteCallback
-from backend.quik_connector.core.quik_connector import QuikConnector
+from infra.quik import QuikConnector
 
 __all__ = ["QuikBrokerAdapter"]
 
