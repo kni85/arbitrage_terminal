@@ -20,7 +20,11 @@ class AppContainer(containers.DeclarativeContainer):
     config = providers.Object(settings)
 
     # Брокер (QUIK) — singleton
-    broker = providers.Singleton(QuikConnector, host=settings.QUIK_HOST, port=settings.QUIK_PORT)
+    broker = providers.Singleton(
+        QuikConnector,
+        host=settings.QUIK_HOST,
+        requests_port=settings.QUIK_PORT,
+    )
 
     # OrderManager — зависит от broker (пока OrderManager внутри сам берёт QuikConnector, но на будущее)
     order_manager = providers.Singleton(OrderManager)
