@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseSettings, Field
+# Pydantic v2: BaseSettings переехал в пакет pydantic_settings
+from pydantic_settings import BaseSettings
+from pydantic import Field
 
 
 class Settings(BaseSettings):
