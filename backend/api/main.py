@@ -17,6 +17,7 @@ from backend.api.ws import router as ws_router
 # CRUD routers
 from backend.api.routes_accounts import router as accounts_router
 from backend.api.routes_assets import router as assets_router
+from backend.api.routes_pairs import router as pairs_router
 from db.database import ensure_tables_exist
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ app.include_router(ws_router)
 # Регистрация CRUD маршрутов
 app.include_router(accounts_router)
 app.include_router(assets_router)
+app.include_router(pairs_router)
 
 
 # --- events ---------------------------------------------------------------
