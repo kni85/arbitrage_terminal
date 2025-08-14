@@ -25,6 +25,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.sqlite import JSON  # заменится на JSONB/JSON для PostgreSQL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import Text
 
 from .database import Base
 
@@ -44,6 +45,125 @@ class Instrument(Base):
 
     def __repr__(self) -> str:  # noqa: D401
         return f"<Instr {self.ticker} ({self.board})>"
+
+# ===========================================================================
+#  GUI reference & settings tables (centralised storage instead of localStorage)
+# ===========================================================================
+
+
+class Account(Base):
+    """Список торговых счетов (accounts_table в old localStorage)."""
+
+    __tablename__ = "accounts_table"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    alias: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    account_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    client_code: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<Account {self.alias} acc={self.account_number}>"
+
+
+class Asset(Base):
+    """Справочник инструментов (assets_table).
+
+    Поле *code* соответствует системному алиасу, который использует GUI.
+    """
+
+    __tablename__ = "assets_table"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    name: Mapped[str | None] = mapped_column(String(128))
+
+    class_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    sec_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    price_step: Mapped[float | None] = mapped_column(Numeric(18, 6))
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<Asset {self.code} {self.class_code}.{self.sec_code}>"
+
+
+class Pair(Base):
+    """Пара для арбитража (pairs_table). Поля повторяют UI."""
+
+    __tablename__ = "pairs_table"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    asset_1: Mapped[str] = mapped_column(String(32), nullable=False)
+    asset_2: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    account_1: Mapped[str | None] = mapped_column(String(64))
+    account_2: Mapped[str | None] = mapped_column(String(64))
+
+    side_1: Mapped[str | None] = mapped_column(String(4))  # 'BUY'/'SELL'
+    side_2: Mapped[str | None] = mapped_column(String(4))
+
+    qty_ratio_1: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    qty_ratio_2: Mapped[float | None] = mapped_column(Numeric(18, 6))
+
+    price_ratio_1: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    price_ratio_2: Mapped[float | None] = mapped_column(Numeric(18, 6))
+
+    price: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    target_qty: Mapped[int | None] = mapped_column(Integer)
+
+    exec_price: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    exec_qty: Mapped[int | None] = mapped_column(Integer)
+    leaves_qty: Mapped[int | None] = mapped_column(Integer)
+
+    strategy_name: Mapped[str | None] = mapped_column(String(64))
+
+    price_1: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    price_2: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    hit_price: Mapped[float | None] = mapped_column(Numeric(18, 6))
+
+    get_mdata: Mapped[bool] = mapped_column(Boolean, default=False)
+    started: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    error: Mapped[str | None] = mapped_column(String(256))
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<Pair {self.asset_1}/{self.asset_2} id={self.id}>"
+
+
+class PairsColumn(Base):
+    """Порядок и ширина столбцов pairs_table (GUI)."""
+
+    __tablename__ = "pairs_columns"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int | None] = mapped_column(Integer)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<PairsColumn {self.name} pos={self.position} w={self.width}>"
+
+
+class Setting(Base):
+    """Глобальные key-value настройки GUI (active_tab, sub_c1 и др.)."""
+
+    __tablename__ = "settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    value: Mapped[str | None] = mapped_column(Text)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<Setting {self.key}={self.value}>"
 
 
 # -- поток котировок ---------------------------------------------------------
