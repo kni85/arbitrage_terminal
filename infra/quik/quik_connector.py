@@ -297,6 +297,9 @@ class QuikConnector:
         print(f"===> Отправка заявки: {tr}")
         try:
             result = await self._send_transaction(tr)
+            # Логируем ответ так же, как в place_limit_order – это полезно для отладки
+            print(f"===> Ответ QUIK: {result}")
+            logger.info(f"Ответ QUIK на маркет-ордер: {result}")
             return result
         except Exception as exc:
             logger.exception("Ошибка при отправке рыночного ордера: %s", exc)

@@ -184,3 +184,5 @@ plan/
 dev_plan.md
 todos.md
 server.py
+db_sync.md
+plan.md
