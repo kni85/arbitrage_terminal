@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from config import container
 from backend.api.routes import router as root_router
 from backend.api.ws import router as ws_router
+# CRUD routers
+from backend.api.routes_accounts import router as accounts_router
 from db.database import ensure_tables_exist
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,8 @@ container.wire(modules=[_routes_module, _ws_module])
 # Подключаем HTTP и WebSocket маршруты
 app.include_router(root_router)
 app.include_router(ws_router)
+# Регистрация CRUD маршрутов
+app.include_router(accounts_router)
 
 
 # --- events ---------------------------------------------------------------
