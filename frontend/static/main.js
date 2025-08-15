@@ -281,6 +281,12 @@ function attachEditableHandlers(row, tableType){
             const accepted = td.dataset.value||'';
             const current = (td.textContent||'').trim();
             if(current!==accepted){ td.textContent = accepted; }
+            // сохраняем при уходе фокуса, если значение уже принято
+            if(tableType==='assets'){
+                saveAssetsTable();
+            } else if(tableType==='accounts'){
+                saveAccountsTable();
+            }
         });
     });
 }
@@ -300,6 +306,7 @@ document.getElementById('menu_add').onclick = ()=>{
     const row = assetsTbody.insertRow(-1);
     initAssetsRow(row);
     menu.style.display='none';
+    saveAssetsTable();
 };
 
 // Delete row
