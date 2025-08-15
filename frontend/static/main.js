@@ -904,15 +904,110 @@ function restoreAssetsTable(){
 
 // Attach input listeners removed: изменения принимаются по Enter в ячейке
 
-// On load restore everything
-window.addEventListener('load', ()=>{
+// ---------------- Backend sync (API <-> localStorage) ----------------
+const API_BASE = '/api';
+async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
+async function postJson(url,obj){ try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
+async function backendSync(){
+    // Assets
+    try{
+        const assets = await fetchJson(`${API_BASE}/assets`);
+        if(Array.isArray(assets) && assets.length){
+            const rows = assets.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
+            localStorage.setItem('assets_table', JSON.stringify(rows));
+        }else{
+            const ls = localStorage.getItem('assets_table');
+            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
+                if(Array.isArray(rows)&&rows.length){
+                    for(const r of rows){ await postJson(`${API_BASE}/assets`,{code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null}); }
+                }
+            }
+        }
+    }catch(_){}
+    // Accounts
+    try{
+        const accounts = await fetchJson(`${API_BASE}/accounts`);
+        if(Array.isArray(accounts) && accounts.length){
+            const rows = accounts.map(a=>[a.alias,'',a.account_number,a.client_code]);
+            localStorage.setItem('accounts_table', JSON.stringify(rows));
+        }else{
+            const ls = localStorage.getItem('accounts_table');
+            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
+                if(Array.isArray(rows)&&rows.length){
+                    for(const r of rows){ await postJson(`${API_BASE}/accounts`,{alias:r[0],account_number:r[2],client_code:r[3]}); }
+                }
+            }
+        }
+    }catch(_){}
+    // Columns (order & widths)
+    try{
+        const cols = await fetchJson(`${API_BASE}/columns`);
+        if(Array.isArray(cols)&&cols.length){
+            cols.sort((a,b)=>a.position-b.position);
+            const order = cols.map(c=>c.name);
+            const widths = cols.map(c=>c.width||0);
+            localStorage.setItem('pairs_col_order', JSON.stringify(order));
+            localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+        }else{
+            const orderStr = localStorage.getItem('pairs_col_order');
+            if(orderStr){ let order; try{order=JSON.parse(orderStr);}catch(e){};
+                let widths=[]; try{widths=JSON.parse(localStorage.getItem('pairs_col_widths')||'[]');}catch(e){}
+                if(Array.isArray(order)&&order.length){
+                    for(let i=0;i<order.length;i++){ await postJson(`${API_BASE}/columns`,{name:order[i],position:i,width:widths[i]||null}); }
+                }
+            }
+        }
+    }catch(_){}
+    // Settings (fld_*, active_tab)
+    try{
+        const settings = await fetchJson(`${API_BASE}/settings`);
+        if(Array.isArray(settings)&&settings.length){
+            settings.forEach(s=>{ if(s.key.startsWith('fld_')||s.key==='active_tab'){ localStorage.setItem(s.key, s.value||''); }});
+        }else{
+            for(let i=0;i<localStorage.length;i++){
+                const key = localStorage.key(i);
+                if(key && (key.startsWith('fld_')||key==='active_tab')){
+                    await postJson(`${API_BASE}/settings`,{key, value: localStorage.getItem(key)});
+                }
+            }
+        }
+    }catch(_){}
+    // Pairs
+    try{
+        const pairs = await fetchJson(`${API_BASE}/pairs`);
+        if(Array.isArray(pairs)&&pairs.length){
+            const rows = pairs.map(p=>[
+                p.asset_1,p.asset_2,p.account_1||'',p.account_2||'',p.side_1||'BUY',p.side_2||'BUY',
+                p.qty_ratio_1||'',p.qty_ratio_2||'',p.price_ratio_1||'',p.price_ratio_2||'',p.price||'',
+                p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
+            ]);
+            localStorage.setItem('pairs_table', JSON.stringify(rows));
+        }else{
+            const ls = localStorage.getItem('pairs_table');
+            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
+                if(Array.isArray(rows)&&rows.length){
+                    for(const r of rows){ await postJson(`${API_BASE}/pairs`,{
+                        asset_1:r[0],asset_2:r[1],account_1:r[2]||null,account_2:r[3]||null,side_1:r[4]||null,side_2:r[5]||null,
+                        qty_ratio_1:parseFloat(r[6])||null,qty_ratio_2:parseFloat(r[7])||null,price_ratio_1:parseFloat(r[8])||null,price_ratio_2:parseFloat(r[9])||null,price:parseFloat(r[10])||null,
+                        target_qty:parseInt(r[11])||null,exec_price:parseFloat(r[12])||null,exec_qty:parseInt(r[13])||0,leaves_qty:parseInt(r[14])||null,strategy_name:r[15]||null,
+                        price_1:parseFloat(r[16])||null,price_2:parseFloat(r[17])||null,hit_price:parseFloat(r[18])||null,get_mdata:r[19]||false,started:r[21]||false,error:r[22]||null
+                    }); }
+                }
+            }
+        }
+    }catch(_){}
+}
+// ---------------------------------------------------------------------
+
+// Заменяем старый обработчик загрузки на async для синхронизации с сервером
+window.addEventListener('load', async ()=>{
+    await backendSync();
     restoreFields();
     restoreAssetsTable();
     restoreAccountsTable();
     restorePairsTable();
     restorePairsOrder();
     enablePairsDragDrop();
-    // Start feeds for rows marked
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
