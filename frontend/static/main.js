@@ -967,6 +967,7 @@ async function backendSync(){
             for(const r of lsRows){ if(r[0]&&r[1]) await postJson(`${API_BASE}/pairs`,{asset_1:r[0],asset_2:r[1]}); }
         }
     }catch(_){}
+}
 // ---------------------------------------------------------------------
 
 // ----- patched save functions ---------------------------------------
