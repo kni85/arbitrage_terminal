@@ -908,94 +908,120 @@ function restoreAssetsTable(){
 const API_BASE = '/api';
 async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
 async function postJson(url,obj){ try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
-async function backendSync(){
-    // Assets
+async function patchJson(url,obj){ try{ await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
+// ==== Helper HTTP methods reused ====
+// ---------------------------------------------------------------------
+// ==== SYNC-10: push changes to server on every save ===================
+async function syncAssets(rows){
     try{
-        const assets = await fetchJson(`${API_BASE}/assets`);
-        if(Array.isArray(assets) && assets.length){
-            const rows = assets.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
-            localStorage.setItem('assets_table', JSON.stringify(rows));
-        }else{
-            const ls = localStorage.getItem('assets_table');
-            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
-                if(Array.isArray(rows)&&rows.length){
-                    for(const r of rows){ await postJson(`${API_BASE}/assets`,{code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null}); }
+        const existing = await fetchJson(`${API_BASE}/assets`)||[];
+        const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
+        for(const r of rows){
+            const payload = {code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null};
+            const ex = byCode[payload.code];
+            if(!ex){ await postJson(`${API_BASE}/assets`,payload); }
+            else{
+                // только если есть изменения
+                if(ex.name!==payload.name||ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||parseFloat(ex.price_step||0)!==parseFloat(payload.price_step||0)){
+                    await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
                 }
             }
         }
     }catch(_){}
-    // Accounts
+}
+async function syncAccounts(rows){
     try{
-        const accounts = await fetchJson(`${API_BASE}/accounts`);
-        if(Array.isArray(accounts) && accounts.length){
-            const rows = accounts.map(a=>[a.alias,'',a.account_number,a.client_code]);
-            localStorage.setItem('accounts_table', JSON.stringify(rows));
-        }else{
-            const ls = localStorage.getItem('accounts_table');
-            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
-                if(Array.isArray(rows)&&rows.length){
-                    for(const r of rows){ await postJson(`${API_BASE}/accounts`,{alias:r[0],account_number:r[2],client_code:r[3]}); }
-                }
+        const existing = await fetchJson(`${API_BASE}/accounts`)||[];
+        const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
+        for(const r of rows){
+            const payload = {alias:r[0],account_number:r[2],client_code:r[3]};
+            const ex = byAlias[payload.alias];
+            if(!ex){ await postJson(`${API_BASE}/accounts`,payload); }
+            else if(ex.account_number!==payload.account_number||ex.client_code!==payload.client_code){
+                await patchJson(`${API_BASE}/accounts/${ex.id}`,payload);
             }
         }
     }catch(_){}
-    // Columns (order & widths)
+}
+async function syncColumns(order,widths){
     try{
-        const cols = await fetchJson(`${API_BASE}/columns`);
-        if(Array.isArray(cols)&&cols.length){
-            cols.sort((a,b)=>a.position-b.position);
-            const order = cols.map(c=>c.name);
-            const widths = cols.map(c=>c.width||0);
-            localStorage.setItem('pairs_col_order', JSON.stringify(order));
-            localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
-        }else{
-            const orderStr = localStorage.getItem('pairs_col_order');
-            if(orderStr){ let order; try{order=JSON.parse(orderStr);}catch(e){};
-                let widths=[]; try{widths=JSON.parse(localStorage.getItem('pairs_col_widths')||'[]');}catch(e){}
-                if(Array.isArray(order)&&order.length){
-                    for(let i=0;i<order.length;i++){ await postJson(`${API_BASE}/columns`,{name:order[i],position:i,width:widths[i]||null}); }
-                }
+        const existing = await fetchJson(`${API_BASE}/columns`)||[];
+        const byName = Object.fromEntries(existing.map(c=>[c.name,c]));
+        for(let i=0;i<order.length;i++){
+            const name = order[i];
+            const payload = {name,position:i,width:widths[i]||null};
+            const ex = byName[name];
+            if(!ex){ await postJson(`${API_BASE}/columns`,payload); }
+            else if(ex.position!==i||parseInt(ex.width||0)!==parseInt(payload.width||0)){
+                await patchJson(`${API_BASE}/columns/${ex.id}`,{position:i,width:payload.width});
             }
         }
     }catch(_){}
-    // Settings (fld_*, active_tab)
+}
+async function syncSetting(key,value){
     try{
-        const settings = await fetchJson(`${API_BASE}/settings`);
-        if(Array.isArray(settings)&&settings.length){
-            settings.forEach(s=>{ if(s.key.startsWith('fld_')||s.key==='active_tab'){ localStorage.setItem(s.key, s.value||''); }});
-        }else{
-            for(let i=0;i<localStorage.length;i++){
-                const key = localStorage.key(i);
-                if(key && (key.startsWith('fld_')||key==='active_tab')){
-                    await postJson(`${API_BASE}/settings`,{key, value: localStorage.getItem(key)});
-                }
-            }
+        const existing = await fetchJson(`${API_BASE}/settings`)||[];
+        const found = existing.find(s=>s.key===key);
+        if(!found){ await postJson(`${API_BASE}/settings`,{key,value}); }
+        else if(found.value!==value){ await patchJson(`${API_BASE}/settings/${found.id}`,{value}); }
+    }catch(_){}
+}
+async function syncPairs(rows){
+    // упрощённо: только POST новые без проверки изменений во избежание конфликтов
+    try{
+        for(const r of rows){
+            const payload = {
+                asset_1:r[0],asset_2:r[1],account_1:r[2]||null,account_2:r[3]||null,side_1:r[4]||null,side_2:r[5]||null,
+                qty_ratio_1:parseFloat(r[6])||null,qty_ratio_2:parseFloat(r[7])||null,price_ratio_1:parseFloat(r[8])||null,price_ratio_2:parseFloat(r[9])||null,price:parseFloat(r[10])||null,
+                target_qty:parseInt(r[11])||null,strategy_name:r[15]||null
+            };
+            await postJson(`${API_BASE}/pairs`,payload);
         }
     }catch(_){}
-    // Pairs
-    try{
-        const pairs = await fetchJson(`${API_BASE}/pairs`);
-        if(Array.isArray(pairs)&&pairs.length){
-            const rows = pairs.map(p=>[
-                p.asset_1,p.asset_2,p.account_1||'',p.account_2||'',p.side_1||'BUY',p.side_2||'BUY',
-                p.qty_ratio_1||'',p.qty_ratio_2||'',p.price_ratio_1||'',p.price_ratio_2||'',p.price||'',
-                p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
-            ]);
-            localStorage.setItem('pairs_table', JSON.stringify(rows));
-        }else{
-            const ls = localStorage.getItem('pairs_table');
-            if(ls){ let rows; try{rows=JSON.parse(ls);}catch(e){};
-                if(Array.isArray(rows)&&rows.length){
-                    for(const r of rows){ await postJson(`${API_BASE}/pairs`,{
-                        asset_1:r[0],asset_2:r[1],account_1:r[2]||null,account_2:r[3]||null,side_1:r[4]||null,side_2:r[5]||null,
-                        qty_ratio_1:parseFloat(r[6])||null,qty_ratio_2:parseFloat(r[7])||null,price_ratio_1:parseFloat(r[8])||null,price_ratio_2:parseFloat(r[9])||null,price:parseFloat(r[10])||null,
-                        target_qty:parseInt(r[11])||null,exec_price:parseFloat(r[12])||null,exec_qty:parseInt(r[13])||0,leaves_qty:parseInt(r[14])||null,strategy_name:r[15]||null,
-                        price_1:parseFloat(r[16])||null,price_2:parseFloat(r[17])||null,hit_price:parseFloat(r[18])||null,get_mdata:r[19]||false,started:r[21]||false,error:r[22]||null
-                    }); }
-                }
-            }
-        }
-    }catch(_){}
+}
+// ---------------------------------------------------------------------
+
+// ----- patched save functions ---------------------------------------
+function saveAssetsTable(){
+    const rows = Array.from(assetsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    localStorage.setItem('assets_table', JSON.stringify(rows));
+    syncAssets(rows);
+}
+function saveAccountsTable(){
+    const rows = Array.from(accountsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    localStorage.setItem('accounts_table', JSON.stringify(rows));
+    syncAccounts(rows);
+}
+function savePairsTable(){
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
+    const rows = Array.from(pairsTbody.rows).map(r=> COLS.map(col=>{
+        const cell = cellById(r,col); if(!cell) return '';
+        if(col.startsWith('side_')) return cell.querySelector('select').value;
+        if(col==='get_mdata'||col==='started') return cell.querySelector('input').checked;
+        if(col==='reset') return '';
+        return cell.textContent;
+    }));
+    localStorage.setItem('pairs_table', JSON.stringify(rows));
+    syncPairs(rows);
+}
+function savePairsOrder(){
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
+    localStorage.setItem('pairs_col_order', JSON.stringify(order));
+    // widths may not be known here; read current widths array
+    const widths = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=> th.getBoundingClientRect().width);
+    syncColumns(order,widths);
+}
+function savePairsWidths(){
+    const widths = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=> th.getBoundingClientRect().width);
+    localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
+    syncColumns(order,widths);
+}
+function saveField(el){
+    const key = 'fld_'+el.id;
+    const value = el.type==='checkbox'? el.checked.toString() : el.value;
+    localStorage.setItem(key, value);
+    syncSetting(key,value);
 }
 // ---------------------------------------------------------------------
 
