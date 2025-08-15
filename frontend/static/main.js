@@ -1014,6 +1014,63 @@ function saveField(el){
 }
 // ---------------------------------------------------------------------
 
+// Helper sync functions (global, used by save*Table) ------------------
+async function syncAssets(rows){ /* no-op if fetch fails */
+    const existing = await fetchJson(`${API_BASE}/assets`)||[];
+    const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
+    for(const r of rows){
+        if(!r[0]) continue;
+        const payload = {code:r[0],name:r[1]||null,class_code:r[2]||null,sec_code:r[3]||null,price_step:r[4]?parseFloat(r[4]):null};
+        const ex = byCode[payload.code];
+        if(!ex){ await postJson(`${API_BASE}/assets`,payload); }
+        else if(ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||ex.name!==payload.name){
+            await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
+        }
+    }
+}
+
+async function syncAccounts(rows){
+    const existing = await fetchJson(`${API_BASE}/accounts`)||[];
+    const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
+    for(const r of rows){
+        if(!r[0]) continue;
+        const payload = {alias:r[0],account_number:r[2]||null,client_code:r[3]||null};
+        const ex = byAlias[payload.alias];
+        if(!ex){ await postJson(`${API_BASE}/accounts`,payload); }
+        else if(ex.account_number!==payload.account_number||ex.client_code!==payload.client_code){
+            await patchJson(`${API_BASE}/accounts/${ex.id}`,payload);
+        }
+    }
+}
+
+async function syncColumns(order,widths){
+    const existing = await fetchJson(`${API_BASE}/columns`)||[];
+    const byName = Object.fromEntries(existing.map(c=>[c.name,c]));
+    for(let i=0;i<order.length;i++){
+        const name = order[i];
+        const width = widths[i]||null;
+        const ex = byName[name];
+        if(!ex){ await postJson(`${API_BASE}/columns`,{name,position:i,width}); }
+        else if(ex.position!==i||parseInt(ex.width||0)!==parseInt(width||0)){
+            await patchJson(`${API_BASE}/columns/${ex.id}`,{position:i,width});
+        }
+    }
+}
+
+async function syncSetting(key,value){
+    const existing = await fetchJson(`${API_BASE}/settings`)||[];
+    const found = existing.find(s=>s.key===key);
+    if(!found){ await postJson(`${API_BASE}/settings`,{key,value}); }
+    else if(found.value!==value){ await patchJson(`${API_BASE}/settings/${found.id}`,{value}); }
+}
+
+async function syncPairs(rows){
+    for(const r of rows){
+        if(!r[0]||!r[1]) continue;
+        await postJson(`${API_BASE}/pairs`,{asset_1:r[0],asset_2:r[1]});
+    }
+}
+
 // Заменяем старый обработчик загрузки на async для синхронизации с сервером
 window.addEventListener('load', async ()=>{
     await backendSync();
