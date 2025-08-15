@@ -924,14 +924,12 @@ async function syncAssets(rows){
         const existing = await fetchJson(`${API_BASE}/assets`)||[];
         const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
         for(const r of rows){
+            if(!r[0]||!r[2]||!r[3]) continue; // обязательные code,class_code,sec_code
             const payload = {code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null};
             const ex = byCode[payload.code];
             if(!ex){ await postJson(`${API_BASE}/assets`,payload); }
-            else{
-                // только если есть изменения
-                if(ex.name!==payload.name||ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||parseFloat(ex.price_step||0)!==parseFloat(payload.price_step||0)){
-                    await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
-                }
+            else if(ex.name!==payload.name||ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||parseFloat(ex.price_step||0)!==parseFloat(payload.price_step||0)){
+                await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
             }
         }
     }catch(_){}
@@ -941,6 +939,7 @@ async function syncAccounts(rows){
         const existing = await fetchJson(`${API_BASE}/accounts`)||[];
         const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
         for(const r of rows){
+            if(!r[0]||!r[2]||!r[3]) continue; // alias, account, client required
             const payload = {alias:r[0],account_number:r[2],client_code:r[3]};
             const ex = byAlias[payload.alias];
             if(!ex){ await postJson(`${API_BASE}/accounts`,payload); }
@@ -974,9 +973,9 @@ async function syncSetting(key,value){
     }catch(_){}
 }
 async function syncPairs(rows){
-    // упрощённо: только POST новые без проверки изменений во избежание конфликтов
     try{
         for(const r of rows){
+            if(!r[0]||!r[1]) continue; // asset_1/asset_2 обязательны
             const payload = {
                 asset_1:r[0],asset_2:r[1],account_1:r[2]||null,account_2:r[3]||null,side_1:r[4]||null,side_2:r[5]||null,
                 qty_ratio_1:parseFloat(r[6])||null,qty_ratio_2:parseFloat(r[7])||null,price_ratio_1:parseFloat(r[8])||null,price_ratio_2:parseFloat(r[9])||null,price:parseFloat(r[10])||null,
