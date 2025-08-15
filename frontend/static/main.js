@@ -1033,12 +1033,27 @@ async function syncAccounts(rows){
     const existing = await fetchJson(`${API_BASE}/accounts`)||[];
     const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
     for(const r of rows){
-        if(!r[0]) continue;
-        const payload = {alias:r[0],account_number:r[2]||null,client_code:r[3]||null};
-        const ex = byAlias[payload.alias];
-        if(!ex){ await postJson(`${API_BASE}/accounts`,payload); }
-        else if(ex.account_number!==payload.account_number||ex.client_code!==payload.client_code){
-            await patchJson(`${API_BASE}/accounts/${ex.id}`,payload);
+        const alias = r[0]?.trim();
+        if(!alias) continue;
+
+        const payloadFull = {
+            alias,
+            account_number: r[2]?.trim()||undefined,
+            client_code: r[3]?.trim()||undefined,
+        };
+
+        const clean = {};
+        Object.entries(payloadFull).forEach(([k,v])=>{ if(v!==undefined && v!=='') clean[k]=v; });
+
+        const ex = byAlias[alias];
+        if(!ex){
+            // для создания требуются все поля
+            if(clean.account_number && clean.client_code){ await postJson(`${API_BASE}/accounts`, clean); }
+        } else {
+            const diff = {};
+            if(clean.account_number && clean.account_number!==ex.account_number) diff.account_number = clean.account_number;
+            if(clean.client_code && clean.client_code!==ex.client_code) diff.client_code = clean.client_code;
+            if(Object.keys(diff).length){ await patchJson(`${API_BASE}/accounts/${ex.id}`, diff); }
         }
     }
 }
