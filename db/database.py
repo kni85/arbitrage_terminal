@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -99,13 +98,9 @@ async def ensure_tables_exist() -> None:
 # Зависимость FastAPI — выдаёт `AsyncSession`
 # ---------------------------------------------------------------------------
 
-@asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:  # type: AsyncSession
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
 
 
 # ---------------------------------------------------------------------------
