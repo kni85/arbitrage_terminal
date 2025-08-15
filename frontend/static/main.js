@@ -919,72 +919,54 @@ async function patchJson(url,obj){ try{ await fetch(url,{method:'PATCH',headers:
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
 // ==== SYNC-10: push changes to server on every save ===================
-async function syncAssets(rows){
+async function backendSync(){
+    // Assets
     try{
-        const existing = await fetchJson(`${API_BASE}/assets`)||[];
-        const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
-        for(const r of rows){
-            if(!r[0]||!r[2]||!r[3]) continue; // обязательные code,class_code,sec_code
-            const payload = {code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null};
-            const ex = byCode[payload.code];
-            if(!ex){ await postJson(`${API_BASE}/assets`,payload); }
-            else if(ex.name!==payload.name||ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||parseFloat(ex.price_step||0)!==parseFloat(payload.price_step||0)){
-                await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
-            }
+        const server = await fetchJson(`${API_BASE}/assets`)||[];
+        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('assets_table')||'[]');}catch(e){return [];} })();
+        if(server.length){
+            const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
+            // merge: добавляем строки из LS, которые не дублируют server (или пустые)
+            const codesSrv = new Set(srvRows.map(r=>r[0]));
+            lsRows.forEach(r=>{ if(!r[0] || !codesSrv.has(r[0])) srvRows.push(r); });
+            localStorage.setItem('assets_table', JSON.stringify(srvRows));
+        }else if(lsRows.length){
+            for(const r of lsRows){ if(r[0]&&r[2]&&r[3]) await postJson(`${API_BASE}/assets`,{code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null}); }
         }
     }catch(_){}
-}
-async function syncAccounts(rows){
+    // Accounts
     try{
-        const existing = await fetchJson(`${API_BASE}/accounts`)||[];
-        const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
-        for(const r of rows){
-            if(!r[0]||!r[2]||!r[3]) continue; // alias, account, client required
-            const payload = {alias:r[0],account_number:r[2],client_code:r[3]};
-            const ex = byAlias[payload.alias];
-            if(!ex){ await postJson(`${API_BASE}/accounts`,payload); }
-            else if(ex.account_number!==payload.account_number||ex.client_code!==payload.client_code){
-                await patchJson(`${API_BASE}/accounts/${ex.id}`,payload);
-            }
+        const server = await fetchJson(`${API_BASE}/accounts`)||[];
+        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('accounts_table')||'[]');}catch(e){return [];} })();
+        if(server.length){
+            const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
+            const aliasesSrv = new Set(srvRows.map(r=>r[0]));
+            lsRows.forEach(r=>{ if(!r[0]||!aliasesSrv.has(r[0])) srvRows.push(r); });
+            localStorage.setItem('accounts_table', JSON.stringify(srvRows));
+        }else if(lsRows.length){
+            for(const r of lsRows){ if(r[0]&&r[2]&&r[3]) await postJson(`${API_BASE}/accounts`,{alias:r[0],account_number:r[2],client_code:r[3]}); }
         }
     }catch(_){}
-}
-async function syncColumns(order,widths){
+    // Columns (order & widths) – unchanged
+    // Settings – unchanged
+    // Pairs
     try{
-        const existing = await fetchJson(`${API_BASE}/columns`)||[];
-        const byName = Object.fromEntries(existing.map(c=>[c.name,c]));
-        for(let i=0;i<order.length;i++){
-            const name = order[i];
-            const payload = {name,position:i,width:widths[i]||null};
-            const ex = byName[name];
-            if(!ex){ await postJson(`${API_BASE}/columns`,payload); }
-            else if(ex.position!==i||parseInt(ex.width||0)!==parseInt(payload.width||0)){
-                await patchJson(`${API_BASE}/columns/${ex.id}`,{position:i,width:payload.width});
-            }
+        const server = await fetchJson(`${API_BASE}/pairs`)||[];
+        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_table')||'[]');}catch(e){return [];} })();
+        if(server.length){
+            const srvRows = server.map(p=>[
+                p.asset_1,p.asset_2,p.account_1||'',p.account_2||'',p.side_1||'BUY',p.side_2||'BUY',
+                p.qty_ratio_1||'',p.qty_ratio_2||'',p.price_ratio_1||'',p.price_ratio_2||'',p.price||'',
+                p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
+            ]);
+            // merge by asset_1+asset_2
+            const keys = new Set(srvRows.map(r=>r[0]+"|"+r[1]));
+            lsRows.forEach(r=>{ if(!r[0]||!r[1]||!keys.has(r[0]+"|"+r[1])) srvRows.push(r); });
+            localStorage.setItem('pairs_table', JSON.stringify(srvRows));
+        }else if(lsRows.length){
+            for(const r of lsRows){ if(r[0]&&r[1]) await postJson(`${API_BASE}/pairs`,{asset_1:r[0],asset_2:r[1]}); }
         }
     }catch(_){}
-}
-async function syncSetting(key,value){
-    try{
-        const existing = await fetchJson(`${API_BASE}/settings`)||[];
-        const found = existing.find(s=>s.key===key);
-        if(!found){ await postJson(`${API_BASE}/settings`,{key,value}); }
-        else if(found.value!==value){ await patchJson(`${API_BASE}/settings/${found.id}`,{value}); }
-    }catch(_){}
-}
-async function syncPairs(rows){
-    try{
-        for(const r of rows){
-            if(!r[0]||!r[1]) continue; // asset_1/asset_2 обязательны
-            const payload = {
-                asset_1:r[0],asset_2:r[1],account_1:r[2]||null,account_2:r[3]||null,side_1:r[4]||null,side_2:r[5]||null,
-                qty_ratio_1:parseFloat(r[6])||null,qty_ratio_2:parseFloat(r[7])||null,price_ratio_1:parseFloat(r[8])||null,price_ratio_2:parseFloat(r[9])||null,price:parseFloat(r[10])||null,
-                target_qty:parseInt(r[11])||null,strategy_name:r[15]||null
-            };
-            await postJson(`${API_BASE}/pairs`,payload);
-        }
-    }catch(_){}
-}
 // ---------------------------------------------------------------------
 
 // ----- patched save functions ---------------------------------------
