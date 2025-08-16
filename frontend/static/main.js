@@ -357,6 +357,10 @@ document.getElementById('menu_del').onclick = ()=>{
  // Delete row
  document.getElementById('accounts_del').onclick = ()=>{
      if(currentAccRow){
+         const alias = currentAccRow.cells[0]?.textContent.trim();
+         if(alias && window._accountIdMap && window._accountIdMap[alias]){
+             deleteJson(`${API_BASE}/accounts/${window._accountIdMap[alias].id}`);
+         }
          currentAccRow.parentNode.removeChild(currentAccRow);
          currentAccRow = null;
          saveAccountsTable();
@@ -947,6 +951,7 @@ async function backendSync(){
     // Accounts
     try{
         const server = await fetchJson(`${API_BASE}/accounts`)||[];
+        window._accountIdMap = Object.fromEntries(server.map(a=>[a.alias, a]));
         const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('accounts_table')||'[]');}catch(e){return [];} })();
         if(server.length){
             const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
