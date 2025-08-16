@@ -918,7 +918,7 @@ function restoreAssetsTable(){
 const API_BASE = '/api';
 async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
 async function postJson(url,obj){ try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
-async function patchJson(url,obj){ try{ await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
+async function patchJson(url,obj,extraHeaders={}){ try{ await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});}catch(_){} }
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
 // ==== SYNC-10: push changes to server on every save ===================
@@ -1120,10 +1120,40 @@ async function syncPairs(rows){
         const a2 = r[1]?.trim();
         if(!a1||!a2) continue;
         const key = `${a1}|${a2}`;
+        const payload = {
+            asset_1: a1,
+            asset_2: a2,
+            account_1: r[2]?.trim()||null,
+            account_2: r[3]?.trim()||null,
+            side_1: r[4]||null,
+            side_2: r[5]||null,
+            qty_ratio_1: r[6]!==''? parseFloat(r[6]): null,
+            qty_ratio_2: r[7]!==''? parseFloat(r[7]): null,
+            price_ratio_1: r[8]!==''? parseFloat(r[8]): null,
+            price_ratio_2: r[9]!==''? parseFloat(r[9]): null,
+            price: r[10]!==''? parseFloat(r[10]): null,
+            target_qty: r[11]!==''? parseInt(r[11]): null,
+            exec_price: r[12]!==''? parseFloat(r[12]): null,
+            exec_qty: r[13]!==''? parseInt(r[13]): 0,
+            leaves_qty: r[14]!==''? parseInt(r[14]): null,
+            strategy_name: r[15]?.trim()||null,
+            price_1: r[16]!==''? parseFloat(r[16]): null,
+            price_2: r[17]!==''? parseFloat(r[17]): null,
+            hit_price: r[18]!==''? parseFloat(r[18]): null,
+            get_mdata: !!r[19],
+            started: !!r[21],
+            error: r[22]?.trim()||null,
+        };
+
         if(!map[key]){
-            await postJson(`${API_BASE}/pairs`,{asset_1:a1, asset_2:a2});
+            // create new
+            await postJson(`${API_BASE}/pairs`, payload);
+        } else {
+            const id = map[key].id;
+            // optimistic-lock header (optional)
+            const hdr = map[key].updated_at ? {'If-Unmodified-Since': map[key].updated_at}: {};
+            await patchJson(`${API_BASE}/pairs/${id}`, payload, hdr);
         }
-        // обновление остальных полей будет реализовано в ERR-2.2
     }
 }
 
