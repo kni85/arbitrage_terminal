@@ -932,8 +932,21 @@ function restoreAssetsTable(){
 // ---------------- Backend sync (API <-> localStorage) ----------------
 const API_BASE = '/api';
 async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
-async function postJson(url,obj){ try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
-async function patchJson(url,obj,extraHeaders={}){ try{ await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});}catch(_){} }
+async function postJson(url,obj){
+    try{
+        const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+        if(res.status===409){ alert('Запись уже существует (409)'); return false; }
+        return res.ok ? await res.json().catch(()=>true): false;
+    }catch(e){ console.error(e); return false; }
+}
+
+async function patchJson(url,obj,extraHeaders={}){
+    try{
+        const res = await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});
+        if(res.status===409){ alert('Конфликт при обновлении (409)'); return false; }
+        return res.ok;
+    }catch(e){ console.error(e); return false; }
+}
 async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_){} }
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
