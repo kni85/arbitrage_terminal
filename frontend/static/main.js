@@ -954,55 +954,35 @@ async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_
 async function backendSync(){
     // Assets
     try{
-        const server = await fetchJson(`${API_BASE}/assets`)||[];
-        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('assets_table')||'[]');}catch(e){return [];} })();
-        // build id map for deletion/updates
-        window._assetIdMap = Object.fromEntries(server.map(a=>[a.code, a]));
-        if(server.length){
-            const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
-            // merge: добавляем строки из LS, которые не дублируют server (или пустые)
-            const codesSrv = new Set(srvRows.map(r=>r[0]));
-            lsRows.forEach(r=>{ if(!r[0] || !codesSrv.has(r[0])) srvRows.push(r); });
-            localStorage.setItem('assets_table', JSON.stringify(srvRows));
-        }else if(lsRows.length){
-            for(const r of lsRows){ if(r[0]&&r[2]&&r[3]) await postJson(`${API_BASE}/assets`,{code:r[0],name:r[1]||null,class_code:r[2],sec_code:r[3],price_step:r[4]?parseFloat(r[4]):null}); }
-        }
+        const server = await fetchJson(`${API_BASE}/assets`);
+        if(server===null) throw new Error('no server');
+        const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
+        localStorage.setItem('assets_table', JSON.stringify(srvRows));
     }catch(_){}
     // Accounts
     try{
-        const server = await fetchJson(`${API_BASE}/accounts`)||[];
-        window._accountIdMap = Object.fromEntries(server.map(a=>[a.alias, a]));
-        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('accounts_table')||'[]');}catch(e){return [];} })();
-        if(server.length){
-            const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
-            const aliasesSrv = new Set(srvRows.map(r=>r[0]));
-            lsRows.forEach(r=>{ if(!r[0]||!aliasesSrv.has(r[0])) srvRows.push(r); });
-            localStorage.setItem('accounts_table', JSON.stringify(srvRows));
-        }else if(lsRows.length){
-            for(const r of lsRows){ if(r[0]&&r[2]&&r[3]) await postJson(`${API_BASE}/accounts`,{alias:r[0],account_number:r[2],client_code:r[3]}); }
-        }
+        const server = await fetchJson(`${API_BASE}/accounts`);
+        if(server===null) throw new Error('no server');
+        const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
+        localStorage.setItem('accounts_table', JSON.stringify(srvRows));
     }catch(_){}
     // Columns (order & widths)
     try{
-        const cols = await fetchJson(`${API_BASE}/columns`)||[];
-        const lsOrder = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_col_order')||'[]');}catch(e){return [];} })();
-        const lsWidths = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_col_widths')||'[]');}catch(e){return [];} })();
-
-        if(cols.length){
-            cols.sort((a,b)=> a.position - b.position);
-            const order = cols.map(c=>c.name);
-            const widths = cols.map(c=>c.width||0);
-            localStorage.setItem('pairs_col_order', JSON.stringify(order));
-            localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
-        } else if(lsOrder.length){
-            // сервер пуст – отправляем текущую раскладку
-            syncColumns(lsOrder, lsWidths);
+        const cols = await fetchJson(`${API_BASE}/columns`);
+        if(cols!==null){
+            if(cols.length){
+                cols.sort((a,b)=> a.position - b.position);
+                const order = cols.map(c=>c.name);
+                const widths = cols.map(c=>c.width||0);
+                localStorage.setItem('pairs_col_order', JSON.stringify(order));
+                localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+            }
         }
     }catch(_){}
     // Settings – load key-value pairs
     try{
-        const settings = await fetchJson(`${API_BASE}/settings`)||[];
-        if(Array.isArray(settings)&&settings.length){
+        const settings = await fetchJson(`${API_BASE}/settings`);
+        if(Array.isArray(settings)){
             settings.forEach(s=>{
                 if(s.key && s.value!==undefined && s.value!==null){
                     localStorage.setItem(s.key, s.value);
@@ -1012,20 +992,15 @@ async function backendSync(){
     }catch(_){}
     // Pairs
     try{
-        const server = await fetchJson(`${API_BASE}/pairs`)||[];
-        const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_table')||'[]');}catch(e){return [];} })();
+        const server = await fetchJson(`${API_BASE}/pairs`);
+        if(server===null) throw new Error('no server');
         if(server.length){
             const srvRows = server.map(p=>[
                 p.asset_1,p.asset_2,p.account_1||'',p.account_2||'',p.side_1||'BUY',p.side_2||'BUY',
                 p.qty_ratio_1||'',p.qty_ratio_2||'',p.price_ratio_1||'',p.price_ratio_2||'',p.price||'',
                 p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
             ]);
-            // merge by asset_1+asset_2
-            const keys = new Set(srvRows.map(r=>r[0]+"|"+r[1]));
-            lsRows.forEach(r=>{ if(!r[0]||!r[1]||!keys.has(r[0]+"|"+r[1])) srvRows.push(r); });
             localStorage.setItem('pairs_table', JSON.stringify(srvRows));
-        }else if(lsRows.length){
-            for(const r of lsRows){ if(r[0]&&r[1]) await postJson(`${API_BASE}/pairs`,{asset_1:r[0],asset_2:r[1]}); }
         }
     }catch(_){}
 }
