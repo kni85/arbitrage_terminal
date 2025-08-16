@@ -568,6 +568,13 @@ document.getElementById('pairs_add').onclick = ()=>{
 // Delete row via menu
 document.getElementById('pairs_del').onclick = ()=>{
     if(currentPairRow){
+        const a1 = cellById(currentPairRow,'asset_1')?.textContent.trim();
+        const a2 = cellById(currentPairRow,'asset_2')?.textContent.trim();
+        const key = a1 && a2 ? `${a1}|${a2}` : null;
+        if(key && window._pairsIdMap && window._pairsIdMap[key]){
+            deleteJson(`${API_BASE}/pairs/${window._pairsIdMap[key].id}`);
+        }
+        closeRowWs(currentPairRow);
         currentPairRow.parentNode.removeChild(currentPairRow);
         currentPairRow = null;
         savePairsTable();
