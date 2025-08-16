@@ -940,23 +940,38 @@ function restoreAssetsTable(){
 
 // ---------------- Backend sync (API <-> localStorage) ----------------
 const API_BASE = '/api';
-async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
+const DEBUG_API = true; // set false in production
+async function fetchJson(url){
+    try{
+        DEBUG_API && console.log('[GET]', url);
+        const res = await fetch(url);
+        DEBUG_API && console.log('  <=', res.status);
+        if(!res.ok) return null;
+        const json = await res.json();
+        DEBUG_API && console.log('  JSON', json);
+        return json;
+    }catch(e){ DEBUG_API && console.error('GET error', e); return null; }
+}
 async function postJson(url,obj){
     try{
+        DEBUG_API && console.log('[POST]', url, obj);
         const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+        DEBUG_API && console.log('  <=', res.status);
         if(res.status===409){ alert('Запись уже существует (409)'); return false; }
         return res.ok ? await res.json().catch(()=>true): false;
-    }catch(e){ console.error(e); return false; }
+    }catch(e){ DEBUG_API && console.error('POST error', e); return false; }
 }
-
 async function patchJson(url,obj,extraHeaders={}){
     try{
+        DEBUG_API && console.log('[PATCH]', url, obj, extraHeaders);
         const res = await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});
+        DEBUG_API && console.log('  <=', res.status);
         if(res.status===409){ alert('Конфликт при обновлении (409)'); return false; }
         return res.ok;
-    }catch(e){ console.error(e); return false; }
+    }catch(e){ DEBUG_API && console.error('PATCH error', e); return false; }
 }
 async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_){} }
+if(DEBUG_API) console.log('DEBUG_API enabled');
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
 // ==== SYNC-10: push changes to server on every save ===================
