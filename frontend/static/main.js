@@ -1119,10 +1119,10 @@ async function syncPairs(rows){
 window.addEventListener('load', async ()=>{
     await backendSync();
     restoreFields();
+    restorePairsOrder(); // сначала порядок колонок
     restoreAssetsTable();
     restoreAccountsTable();
-    restorePairsTable();
-    restorePairsOrder();
+    restorePairsTable(); // строки после порядка, внутри вызовет restorePairsWidths
     enablePairsDragDrop();
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
