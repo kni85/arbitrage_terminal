@@ -10,6 +10,7 @@ function activate(tab){
     document.getElementById('tab'+tab).classList.add('active');
     document.getElementById('page_title').textContent = TAB_NAMES[tab] || '';
     localStorage.setItem('active_tab', tab);
+    if(typeof syncSetting==='function') syncSetting('active_tab', tab);
 }
 document.getElementById('btnTab1').onclick = ()=>activate(1);
 document.getElementById('btnTab2').onclick = ()=>activate(2);
@@ -948,7 +949,17 @@ async function backendSync(){
         }
     }catch(_){}
     // Columns (order & widths) – unchanged
-    // Settings – unchanged
+    // Settings – load key-value pairs
+    try{
+        const settings = await fetchJson(`${API_BASE}/settings`)||[];
+        if(Array.isArray(settings)&&settings.length){
+            settings.forEach(s=>{
+                if(s.key && s.value!==undefined && s.value!==null){
+                    localStorage.setItem(s.key, s.value);
+                }
+            });
+        }
+    }catch(_){}
     // Pairs
     try{
         const server = await fetchJson(`${API_BASE}/pairs`)||[];
