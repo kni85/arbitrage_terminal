@@ -431,16 +431,33 @@ function updateHitPrice(row){
 // ----- Utilities ---------------------------------------
 
 function lookupClassSec(systemCode){
+    if(window._assetIdMap && window._assetIdMap[systemCode]){
+        const a = window._assetIdMap[systemCode];
+        return {classcode:a.class_code, seccode:a.sec_code, price_step:a.price_step};
+    }
+    // fallback to LocalStorage (offline cache)
     const data = localStorage.getItem('assets_table');
     if(!data) return null;
-    let rows;
-    try { rows = JSON.parse(data);} catch(e){return null;}
-    for(const r of rows){
-        if(r[0]===systemCode){
-            return {classcode:r[2], seccode:r[3], price_step:r[4]};
-        }
+    try{
+        const rows = JSON.parse(data);
+        const r = rows.find(x=>x[0]===systemCode);
+        return r? {classcode:r[2], seccode:r[3], price_step:r[4]}: null;
+    }catch(_){ return null; }
+}
+
+function lookupAccount(alias){
+    if(window._accountIdMap && window._accountIdMap[alias]){
+        const acc = window._accountIdMap[alias];
+        return {account: acc.account_number, client: acc.client_code};
     }
-    return null;
+    // fallback LocalStorage
+    const data = localStorage.getItem('accounts_table');
+    if(!data) return null;
+    try{
+        const rows = JSON.parse(data);
+        const r = rows.find(x=>x[0]===alias);
+        return r? {account:r[2], client:r[3]}: null;
+    }catch(_){ return null; }
 }
 
 function decimalsFromStep(step){
@@ -634,14 +651,6 @@ function checkRowForTrade(row){
     if(trigger && leaves>0){
         sendPairOrder(row);
     }
-}
-
-function lookupAccount(alias){
-    const data = localStorage.getItem('accounts_table');
-    if(!data) return null;
-    let rows; try{ rows = JSON.parse(data);}catch(e){return null;}
-    for(const r of rows){ if(r[0]===alias){ return {account:r[2], client:r[3]}; } }
-    return null;
 }
 
 function sendPairOrder(row){
