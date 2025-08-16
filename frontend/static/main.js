@@ -1067,12 +1067,31 @@ async function syncAssets(rows){ /* no-op if fetch fails */
     const existing = await fetchJson(`${API_BASE}/assets`)||[];
     const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
     for(const r of rows){
-        if(!r[0]) continue;
-        const payload = {code:r[0],name:r[1]||null,class_code:r[2]||null,sec_code:r[3]||null,price_step:r[4]?parseFloat(r[4]):null};
-        const ex = byCode[payload.code];
-        if(!ex){ await postJson(`${API_BASE}/assets`,payload); }
-        else if(ex.class_code!==payload.class_code||ex.sec_code!==payload.sec_code||ex.name!==payload.name){
-            await patchJson(`${API_BASE}/assets/${ex.id}`,payload);
+        const code = r[0]?.trim();
+        if(!code) continue;
+
+        const dataFull = {
+            code,
+            name: r[1]?.trim()||undefined,
+            class_code: r[2]?.trim()||undefined,
+            sec_code: r[3]?.trim()||undefined,
+            price_step: r[4]!==''? parseFloat(r[4]): undefined,
+        };
+
+        const clean = {};
+        Object.entries(dataFull).forEach(([k,v])=>{ if(v!==undefined && v!=='') clean[k]=v; });
+
+        const ex = byCode[code];
+        if(!ex){
+            // Для создания нужны обязательные non-null поля class_code, sec_code
+            if(clean.class_code && clean.sec_code){ await postJson(`${API_BASE}/assets`, clean); }
+        } else {
+            const diff = {};
+            if(clean.name && clean.name!==ex.name) diff.name = clean.name;
+            if(clean.class_code && clean.class_code!==ex.class_code) diff.class_code = clean.class_code;
+            if(clean.sec_code && clean.sec_code!==ex.sec_code) diff.sec_code = clean.sec_code;
+            if(clean.price_step!==undefined && parseFloat(clean.price_step)!==parseFloat(ex.price_step||0)) diff.price_step = clean.price_step;
+            if(Object.keys(diff).length){ await patchJson(`${API_BASE}/assets/${ex.id}`, diff); }
         }
     }
 }
