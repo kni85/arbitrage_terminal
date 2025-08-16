@@ -313,6 +313,10 @@ document.getElementById('menu_add').onclick = ()=>{
 // Delete row
 document.getElementById('menu_del').onclick = ()=>{
     if(currentRow){
+        const code = currentRow.cells[0]?.textContent.trim();
+        if(code && window._assetIdMap && window._assetIdMap[code]){
+            deleteJson(`${API_BASE}/assets/${window._assetIdMap[code].id}`);
+        }
         currentRow.parentNode.removeChild(currentRow);
         currentRow = null;
         saveAssetsTable();
@@ -928,6 +932,8 @@ async function backendSync(){
     try{
         const server = await fetchJson(`${API_BASE}/assets`)||[];
         const lsRows = (()=>{ try{return JSON.parse(localStorage.getItem('assets_table')||'[]');}catch(e){return [];} })();
+        // build id map for deletion/updates
+        window._assetIdMap = Object.fromEntries(server.map(a=>[a.code, a]));
         if(server.length){
             const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
             // merge: добавляем строки из LS, которые не дублируют server (или пустые)
