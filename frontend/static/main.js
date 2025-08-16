@@ -1109,9 +1109,21 @@ async function syncSetting(key,value){
 }
 
 async function syncPairs(rows){
+    // Получаем список пар с сервера один раз – строим карту "asset1|asset2" -> {id, updated_at}
+    let serverPairs = [];
+    try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
+    const map = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
+    window._pairsIdMap = map; // для последующих шагов (ERR-2.2)
+
     for(const r of rows){
-        if(!r[0]||!r[1]) continue;
-        await postJson(`${API_BASE}/pairs`,{asset_1:r[0],asset_2:r[1]});
+        const a1 = r[0]?.trim();
+        const a2 = r[1]?.trim();
+        if(!a1||!a2) continue;
+        const key = `${a1}|${a2}`;
+        if(!map[key]){
+            await postJson(`${API_BASE}/pairs`,{asset_1:a1, asset_2:a2});
+        }
+        // обновление остальных полей будет реализовано в ERR-2.2
     }
 }
 
