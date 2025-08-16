@@ -919,6 +919,7 @@ const API_BASE = '/api';
 async function fetchJson(url){ try{ const res = await fetch(url); if(!res.ok) return null; return await res.json(); }catch(_){ return null; } }
 async function postJson(url,obj){ try{ await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});}catch(_){} }
 async function patchJson(url,obj,extraHeaders={}){ try{ await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});}catch(_){} }
+async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_){} }
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
 // ==== SYNC-10: push changes to server on every save ===================
@@ -1115,6 +1116,15 @@ async function syncPairs(rows){
     const map = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
     window._pairsIdMap = map; // для последующих шагов (ERR-2.2)
 
+    // --- DELETE pairs that were removed on UI ---
+    const uiKeys = new Set(rows.map(r=>`${r[0]?.trim()}|${r[1]?.trim()}`));
+    for(const [k,p] of Object.entries(map)){
+        if(!uiKeys.has(k)){
+            await deleteJson(`${API_BASE}/pairs/${p.id}`);
+        }
+    }
+
+    // --- CREATE / UPDATE current rows ---
     for(const r of rows){
         const a1 = r[0]?.trim();
         const a2 = r[1]?.trim();
@@ -1146,8 +1156,12 @@ async function syncPairs(rows){
         };
 
         if(!map[key]){
-            // create new
-            await postJson(`${API_BASE}/pairs`, payload);
+            // create new pair
+            const res = await fetch(`${API_BASE}/pairs`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            if(res.ok){
+                const created = await res.json().catch(()=>null);
+                if(created && created.id){ map[key]=created; }
+            }
         } else {
             const id = map[key].id;
             // optimistic-lock header (optional)
