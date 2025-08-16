@@ -836,6 +836,8 @@ function restorePairsOrder(){
 function savePairsWidths(){
     const widths = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=> th.getBoundingClientRect().width);
     localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
+    syncColumns(order,widths);
 }
 
 function restorePairsWidths(){
@@ -948,7 +950,23 @@ async function backendSync(){
             for(const r of lsRows){ if(r[0]&&r[2]&&r[3]) await postJson(`${API_BASE}/accounts`,{alias:r[0],account_number:r[2],client_code:r[3]}); }
         }
     }catch(_){}
-    // Columns (order & widths) – unchanged
+    // Columns (order & widths)
+    try{
+        const cols = await fetchJson(`${API_BASE}/columns`)||[];
+        const lsOrder = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_col_order')||'[]');}catch(e){return [];} })();
+        const lsWidths = (()=>{ try{return JSON.parse(localStorage.getItem('pairs_col_widths')||'[]');}catch(e){return [];} })();
+
+        if(cols.length){
+            cols.sort((a,b)=> a.position - b.position);
+            const order = cols.map(c=>c.name);
+            const widths = cols.map(c=>c.width||0);
+            localStorage.setItem('pairs_col_order', JSON.stringify(order));
+            localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+        } else if(lsOrder.length){
+            // сервер пуст – отправляем текущую раскладку
+            syncColumns(lsOrder, lsWidths);
+        }
+    }catch(_){}
     // Settings – load key-value pairs
     try{
         const settings = await fetchJson(`${API_BASE}/settings`)||[];
