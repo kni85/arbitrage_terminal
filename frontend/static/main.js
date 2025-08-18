@@ -271,9 +271,14 @@ function attachEditableHandlers(row, tableType){
                 if(tableType==='pairs'){
                     const r = row; savePairsTable(); updateHitPrice(r); updateLeaves(r); checkRowForTrade(r);
                 } else if(tableType==='assets'){
-                    saveAssetsTable();
+                    // сначала коммитим строку в БД
+                    const tr = td.closest('tr');
+                    ensureRowPersisted('assets', tr).then(()=>{ saveAssetsTable(); });
+                    return td.blur();
                 } else if(tableType==='accounts'){
-                    saveAccountsTable();
+                    const tr = td.closest('tr');
+                    ensureRowPersisted('accounts', tr).then(()=>{ saveAccountsTable(); });
+                    return td.blur();
                 }
                 td.blur();
             }
@@ -284,9 +289,11 @@ function attachEditableHandlers(row, tableType){
             if(current!==accepted){ td.textContent = accepted; }
             // сохраняем при уходе фокуса, если значение уже принято
             if(tableType==='assets'){
-                saveAssetsTable();
+                const tr = td.closest('tr');
+                ensureRowPersisted('assets', tr).then(()=>{ saveAssetsTable(); });
             } else if(tableType==='accounts'){
-                saveAccountsTable();
+                const tr = td.closest('tr');
+                ensureRowPersisted('accounts', tr).then(()=>{ saveAccountsTable(); });
             }
         });
     });
@@ -1276,3 +1283,100 @@ window.addEventListener('load', async ()=>{
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
 });
+
+// Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
+async function ensureRowPersisted(tableType, tr){
+    if(!tr) return;
+    const rowData = extractRowDataFromTr(tableType, tr);
+    const id = tr.dataset.id ? parseInt(tr.dataset.id, 10) : null;
+    const base = `${API_BASE}/${tableType}`;
+    if(!id){
+        const created = await postJson(`${base}/`, rowData);
+        if(created && created.id){
+            tr.dataset.id = String(created.id);
+            persistRowToLocalStorage(tableType, tr, { ...rowData, id: created.id });
+            if(tableType==='assets'){
+                window._assetIdMap = window._assetIdMap||{};
+                if(created.code){ window._assetIdMap[created.code] = created; }
+            } else if(tableType==='accounts'){
+                window._accountIdMap = window._accountIdMap||{};
+                if(created.alias){ window._accountIdMap[created.alias] = created; }
+            } else if(tableType==='pairs'){
+                window._pairsIdMap = window._pairsIdMap||{};
+                const key = `${created.asset_1||''}|${created.asset_2||''}`;
+                window._pairsIdMap[key] = created;
+            }
+        }
+    } else {
+        const patched = await patchJson(`${base}/${id}`, rowData);
+        if(patched && patched.id){
+            persistRowToLocalStorage(tableType, tr, { ...rowData, id });
+        }
+    }
+}
+
+function extractRowDataFromTr(tableType, tr){
+    if(tableType==='assets'){
+        const c = tr.cells;
+        const payload = {
+            code: (c[0]?.textContent||'').trim()||undefined,
+            name: (c[1]?.textContent||'').trim()||undefined,
+            class_code: (c[2]?.textContent||'').trim()||undefined,
+            sec_code: (c[3]?.textContent||'').trim()||undefined,
+            price_step: (c[4] && c[4].textContent!==''? parseFloat(c[4].textContent): undefined),
+        };
+        const clean={}; Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined) clean[k]=v; });
+        return clean;
+    }
+    if(tableType==='accounts'){
+        const c = tr.cells;
+        const payload = {
+            alias: (c[0]?.textContent||'').trim()||undefined,
+            account_number: (c[2]?.textContent||'').trim()||undefined,
+            client_code: (c[3]?.textContent||'').trim()||undefined,
+        };
+        const clean={}; Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined) clean[k]=v; });
+        return clean;
+    }
+    if(tableType==='pairs'){
+        const val = (id)=>{ const cell = cellById(tr,id); if(!cell) return undefined; return cell.textContent?.trim()||undefined; };
+        const num = (id)=>{ const t = (cellById(tr,id)?.textContent||'').trim(); return t===''? undefined: (id==='target_qty'||id==='exec_qty'||id==='leaves_qty'? parseInt(t): parseFloat(t)); };
+        const bool = (id)=>{ const cell = cellById(tr,id); if(!cell) return undefined; const inp = cell.querySelector('input'); return inp? inp.checked: undefined; };
+        const sel = (id)=>{ const cell = cellById(tr,id); if(!cell) return undefined; const s=cell.querySelector('select'); return s? s.value: undefined; };
+        const payload = {
+            asset_1: val('asset_1'),
+            asset_2: val('asset_2'),
+            account_1: val('account_1'),
+            account_2: val('account_2'),
+            side_1: sel('side_1'),
+            side_2: sel('side_2'),
+            qty_ratio_1: num('qty_ratio_1'),
+            qty_ratio_2: num('qty_ratio_2'),
+            price_ratio_1: num('price_ratio_1'),
+            price_ratio_2: num('price_ratio_2'),
+            price: num('price'),
+            target_qty: num('target_qty'),
+            exec_price: num('exec_price'),
+            exec_qty: num('exec_qty'),
+            leaves_qty: num('leaves_qty'),
+            strategy_name: val('strategy_name'),
+            price_1: num('price_1'),
+            price_2: num('price_2'),
+            hit_price: num('hit_price'),
+            get_mdata: bool('get_mdata'),
+            started: bool('started'),
+            error: val('error'),
+        };
+        const clean={}; Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined) clean[k]=v; });
+        return clean;
+    }
+    return {};
+}
+
+function persistRowToLocalStorage(tableType, tr, obj){
+    const key = tableType==='assets'? 'assets_table': tableType==='accounts'? 'accounts_table': 'pairs_table';
+    let arr=[]; try{ arr = JSON.parse(localStorage.getItem(key)||'[]'); }catch(_){ arr=[]; }
+    const tbody = tableType==='assets'? assetsTbody: tableType==='accounts'? accountsTbody: pairsTbody;
+    const idx = Array.from(tbody.rows).indexOf(tr);
+    if(idx>=0){ arr[idx] = obj; localStorage.setItem(key, JSON.stringify(arr)); }
+}
