@@ -324,6 +324,9 @@ document.getElementById('menu_del').onclick = ()=>{
     menu.style.display='none';
 };
 
+// --- Autosave on each keystroke in assets table ----------------------
+assetsTbody.addEventListener('input', ()=> saveAssetsTable());
+
  // ---------------- Accounts codes table ----------------------
  const accountsTbody = document.getElementById('accounts_tbody');
  const accountsMenu  = document.getElementById('accounts_menu');
@@ -367,6 +370,9 @@ document.getElementById('menu_del').onclick = ()=>{
      }
      accountsMenu.style.display='none';
  };
+
+ // --- Autosave on each keystroke in accounts table --------------------
+ accountsTbody.addEventListener('input', ()=> saveAccountsTable());
 
  function saveAccountsTable(){
      const rows = Array.from(accountsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
