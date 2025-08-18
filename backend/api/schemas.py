@@ -27,8 +27,11 @@ class AccountBase(BaseModel):
     client_code: str = Field(..., max_length=32)
 
 
-class AccountCreate(AccountBase):
-    pass
+class AccountCreate(BaseModel):
+    # Все поля опциональны — разрешаем пустые/частичные строки
+    alias: Optional[str] = Field(None, max_length=64)
+    account_number: Optional[str] = Field(None, max_length=32)
+    client_code: Optional[str] = Field(None, max_length=32)
 
 
 class AccountRead(AccountBase):
@@ -54,8 +57,13 @@ class AssetBase(BaseModel):
     price_step: Optional[float] = None
 
 
-class AssetCreate(AssetBase):
-    pass
+class AssetCreate(BaseModel):
+    # Все поля опциональны — разрешаем пустые/частичные строки
+    code: Optional[str] = Field(None, max_length=32)
+    name: Optional[str] = Field(None, max_length=128)
+    class_code: Optional[str] = Field(None, max_length=16)
+    sec_code: Optional[str] = Field(None, max_length=32)
+    price_step: Optional[float] = None
 
 
 class AssetRead(AssetBase):
@@ -64,6 +72,7 @@ class AssetRead(AssetBase):
 
 
 class AssetUpdate(BaseModel):
+    code: Optional[str] = Field(None, max_length=32)
     name: Optional[str] = Field(None, max_length=128)
     class_code: Optional[str] = Field(None, max_length=16)
     sec_code: Optional[str] = Field(None, max_length=32)
@@ -110,8 +119,29 @@ class PairBase(BaseModel):
     error: Optional[str] = None
 
 
-class PairCreate(PairBase):
-    pass
+class PairCreate(BaseModel):
+    asset_1: Optional[str] = None
+    asset_2: Optional[str] = None
+    account_1: Optional[str] = None
+    account_2: Optional[str] = None
+    side_1: Optional[str] = None
+    side_2: Optional[str] = None
+    qty_ratio_1: Optional[float] = None
+    qty_ratio_2: Optional[float] = None
+    price_ratio_1: Optional[float] = None
+    price_ratio_2: Optional[float] = None
+    price: Optional[float] = None
+    target_qty: Optional[int] = None
+    strategy_name: Optional[str] = None
+    exec_price: Optional[float] = None
+    exec_qty: Optional[int] = None
+    leaves_qty: Optional[int] = None
+    price_1: Optional[float] = None
+    price_2: Optional[float] = None
+    hit_price: Optional[float] = None
+    get_mdata: Optional[bool] = None
+    started: Optional[bool] = None
+    error: Optional[str] = None
 
 
 class PairRead(PairBase):
@@ -188,3 +218,10 @@ class SettingRead(SettingBase):
 
 class SettingUpdate(BaseModel):
     value: Optional[str] = None
+
+
+if __name__ == "__main__":
+    # Мини-тест: создаём пустые payload — валидатор не должен падать
+    print("AssetCreate empty ok:", AssetCreate())
+    print("AccountCreate empty ok:", AccountCreate())
+    print("PairCreate empty ok:", PairCreate())
