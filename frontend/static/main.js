@@ -1215,12 +1215,9 @@ async function syncPairs(rows){
         };
 
         if(!map[key]){
-            // create new pair
-            const res = await fetch(`${API_BASE}/pairs/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-            if(res.ok){
-                const created = await res.json().catch(()=>null);
-                if(created && created.id){ map[key]=created; }
-            }
+            // create new pair via helper
+            const created = await postJson(`${API_BASE}/pairs/`, payload);
+            if(created && created.id){ map[key]=created; }
         } else {
             const id = map[key].id;
             // optimistic-lock header (optional)
