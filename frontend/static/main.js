@@ -1119,67 +1119,56 @@ function saveField(el){
 // Helper sync functions (global, used by save*Table) ------------------
 async function syncAssets(rows){ /* no-op if fetch fails */
     const existing = await fetchJson(`${API_BASE}/assets`)||[];
-    const byCode = Object.fromEntries(existing.map(a=>[a.code,a]));
-    for(const r of rows){
-        const code = r[0]?.trim();
-        if(!code) continue;
-
-        const dataFull = {
-            code,
-            name: r[1]?.trim()||undefined,
-            class_code: r[2]?.trim()||undefined,
-            sec_code: r[3]?.trim()||undefined,
-            price_step: r[4]!==''? parseFloat(r[4]): undefined,
-        };
-
-        const clean = {};
-        Object.entries(dataFull).forEach(([k,v])=>{ if(v!==undefined && v!=='') clean[k]=v; });
-
-        const ex = byCode[code];
+    const byCode = Object.fromEntries(existing.map(a=>[(a.code||`__id_${a.id}`), a]));
+    // Нормализуем вход: rows (массив массивов) -> объекты; иначе читаем из LS
+    let rowsObj = [];
+    if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
+        rowsObj = rows.map(r=>({
+            code: (r[0]||'').trim()||undefined,
+            name: (r[1]||'').trim()||undefined,
+            class_code: (r[2]||'').trim()||undefined,
+            sec_code: (r[3]||'').trim()||undefined,
+            price_step: r[4]!=='' && r[4]!==undefined ? parseFloat(r[4]) : undefined,
+        }));
+    } else {
+        try{ rowsObj = JSON.parse(localStorage.getItem('assets_table')||'[]')||[]; }catch(_){ rowsObj=[]; }
+    }
+    for (const r of rowsObj){
+        const codeKey = (r && r.code) ? r.code : `__id_${(r&&r.id)||crypto.randomUUID()}`;
+        const ex = byCode[codeKey];
+        const clean = {...r};
         if(!ex){
-            // Для создания нужны обязательные non-null поля class_code, sec_code
-            if(clean.class_code && clean.sec_code){
-                const created = await postJson(`${API_BASE}/assets/`, clean);
-                if(created && created.id){ byCode[code] = created; }
-            }
+            const created = await postJson(`${API_BASE}/assets/`, clean);
+            if(created && created.id){ byCode[codeKey] = created; }
         } else {
-            const diff = {};
-            if(clean.name && clean.name!==ex.name) diff.name = clean.name;
-            if(clean.class_code && clean.class_code!==ex.class_code) diff.class_code = clean.class_code;
-            if(clean.sec_code && clean.sec_code!==ex.sec_code) diff.sec_code = clean.sec_code;
-            if(clean.price_step!==undefined && parseFloat(clean.price_step)!==parseFloat(ex.price_step||0)) diff.price_step = clean.price_step;
-            if(Object.keys(diff).length){ await patchJson(`${API_BASE}/assets/${ex.id}`, diff); }
+            await patchJson(`${API_BASE}/assets/${ex.id}`, clean);
         }
     }
-    // update global map after sync
     window._assetIdMap = byCode;
 }
 
 async function syncAccounts(rows){
     const existing = await fetchJson(`${API_BASE}/accounts`)||[];
-    const byAlias = Object.fromEntries(existing.map(a=>[a.alias,a]));
-    for(const r of rows){
-        const alias = r[0]?.trim();
-        if(!alias) continue;
-
-        const payloadFull = {
-            alias,
-            account_number: r[2]?.trim()||undefined,
-            client_code: r[3]?.trim()||undefined,
-        };
-
-        const clean = {};
-        Object.entries(payloadFull).forEach(([k,v])=>{ if(v!==undefined && v!=='') clean[k]=v; });
-
-        const ex = byAlias[alias];
+    const byAlias = Object.fromEntries(existing.map(a=>[(a.alias||`__id_${a.id}`), a]));
+    let rowsObj = [];
+    if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
+        rowsObj = rows.map(r=>({
+            alias: (r[0]||'').trim()||undefined,
+            account_number: (r[2]||'').trim()||undefined,
+            client_code: (r[3]||'').trim()||undefined,
+        }));
+    } else {
+        try{ rowsObj = JSON.parse(localStorage.getItem('accounts_table')||'[]')||[]; }catch(_){ rowsObj=[]; }
+    }
+    for (const r of rowsObj){
+        const aliasKey = (r && r.alias) ? r.alias : `__id_${(r&&r.id)||crypto.randomUUID()}`;
+        const ex = byAlias[aliasKey];
+        const clean = {...r};
         if(!ex){
-            // для создания требуются все поля
-            if(clean.account_number && clean.client_code){ await postJson(`${API_BASE}/accounts/`, clean); }
+            const created = await postJson(`${API_BASE}/accounts/`, clean);
+            if(created && created.id){ byAlias[aliasKey] = created; }
         } else {
-            const diff = {};
-            if(clean.account_number && clean.account_number!==ex.account_number) diff.account_number = clean.account_number;
-            if(clean.client_code && clean.client_code!==ex.client_code) diff.client_code = clean.client_code;
-            if(Object.keys(diff).length){ await patchJson(`${API_BASE}/accounts/${ex.id}`, diff); }
+            await patchJson(`${API_BASE}/accounts/${ex.id}`, clean);
         }
     }
     window._accountIdMap = byAlias;
