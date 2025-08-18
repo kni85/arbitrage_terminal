@@ -592,6 +592,7 @@ document.getElementById('pairs_del').onclick = ()=>{
         const key = a1 && a2 ? `${a1}|${a2}` : null;
         if(key && window._pairsIdMap && window._pairsIdMap[key]){
             deleteJson(`${API_BASE}/pairs/${window._pairsIdMap[key].id}`);
+            delete window._pairsIdMap[key];
         }
         closeRowWs(currentPairRow);
         currentPairRow.parentNode.removeChild(currentPairRow);
@@ -1038,6 +1039,8 @@ async function backendSync(){
                 p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
             ]);
             localStorage.setItem('pairs_table', JSON.stringify(srvRows));
+            // build map asset1|asset2 -> pair object
+            window._pairsIdMap = Object.fromEntries(server.map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
         }
     }catch(_){}
 }
@@ -1189,6 +1192,7 @@ async function syncPairs(rows){
     for(const [k,p] of Object.entries(map)){
         if(!uiKeys.has(k)){
             await deleteJson(`${API_BASE}/pairs/${p.id}`);
+            delete window._pairsIdMap[k];
         }
     }
 
