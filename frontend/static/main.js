@@ -1226,16 +1226,19 @@ async function syncPairs(rows){
             started: !!r[21],
             error: r[22]?.trim()||null,
         };
+        const payloadClean = {};
+        Object.entries(payload).forEach(([k,v])=>{ if(v!==null && v!==undefined && v!=='') payloadClean[k]=v; });
 
         if(!map[key]){
-            // create new pair via helper
-            const created = await postJson(`${API_BASE}/pairs/`, payload);
+            // create new pair
+            if(!payloadClean.asset_1 || !payloadClean.asset_2){ continue; }
+            const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
             if(created && created.id){ map[key]=created; }
         } else {
             const id = map[key].id;
             // optimistic-lock header (optional)
             const hdr = map[key].updated_at ? {'If-Unmodified-Since': map[key].updated_at}: {};
-            const patched = await patchJson(`${API_BASE}/pairs/${id}`, payload, hdr);
+            const patched = await patchJson(`${API_BASE}/pairs/${id}`, payloadClean, hdr);
             if(patched && patched.updated_at){ map[key].updated_at = patched.updated_at; }
         }
     }
