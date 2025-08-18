@@ -949,8 +949,16 @@ function restoreFields(){
 }
 
 function saveAssetsTable(){
-    const rows = Array.from(assetsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    const rows = Array.from(assetsTbody.rows).map(tr=>({
+        id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null,
+        code: (tr.cells[0]?.textContent||'').trim()||'',
+        name: (tr.cells[1]?.textContent||'').trim()||'',
+        class_code: (tr.cells[2]?.textContent||'').trim()||'',
+        sec_code: (tr.cells[3]?.textContent||'').trim()||'',
+        price_step: (tr.cells[4] && tr.cells[4].textContent!==''? parseFloat(tr.cells[4].textContent): null),
+    }));
     localStorage.setItem('assets_table', JSON.stringify(rows));
+    syncAssets(rows);
 }
 
 function restoreAssetsTable(){
@@ -1095,26 +1103,46 @@ async function backendSync(){
 
 // ----- patched save functions ---------------------------------------
 function saveAssetsTable(){
-    const rows = Array.from(assetsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    const rows = Array.from(assetsTbody.rows).map(tr=>({
+        id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null,
+        code: (tr.cells[0]?.textContent||'').trim()||'',
+        name: (tr.cells[1]?.textContent||'').trim()||'',
+        class_code: (tr.cells[2]?.textContent||'').trim()||'',
+        sec_code: (tr.cells[3]?.textContent||'').trim()||'',
+        price_step: (tr.cells[4] && tr.cells[4].textContent!==''? parseFloat(tr.cells[4].textContent): null),
+    }));
     localStorage.setItem('assets_table', JSON.stringify(rows));
     syncAssets(rows);
 }
 function saveAccountsTable(){
-    const rows = Array.from(accountsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
+    const rows = Array.from(accountsTbody.rows).map(tr=>({
+        id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null,
+        alias: (tr.cells[0]?.textContent||'').trim()||'',
+        account_number: (tr.cells[2]?.textContent||'').trim()||'',
+        client_code: (tr.cells[3]?.textContent||'').trim()||'',
+    }));
     localStorage.setItem('accounts_table', JSON.stringify(rows));
     syncAccounts(rows);
 }
 function savePairsTable(){
     const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
-    const rows = Array.from(pairsTbody.rows).map(r=> COLS.map(col=>{
-        const cell = cellById(r,col); if(!cell) return '';
-        if(col.startsWith('side_')) return cell.querySelector('select').value;
-        if(col==='get_mdata'||col==='started') return cell.querySelector('input').checked;
-        if(col==='reset') return '';
-        return cell.textContent;
-    }));
+    const rows = Array.from(pairsTbody.rows).map(tr=>{
+        const obj = { id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null };
+        COLS.forEach(col=>{
+            const cell = cellById(tr,col);
+            if(!cell){ obj[col]=''; return; }
+            if(col.startsWith('side_')){ obj[col] = cell.querySelector('select').value; return; }
+            if(col==='get_mdata'||col==='started'){ obj[col] = cell.querySelector('input').checked; return; }
+            if(col==='reset'){ obj[col] = ''; return; }
+            obj[col] = cell.textContent;
+        });
+        return obj;
+    });
     localStorage.setItem('pairs_table', JSON.stringify(rows));
-    syncPairs(rows);
+    syncPairs(rows.map(r=>{
+        // для совместимости с текущей syncPairs (ожидает массивы) отдадим как раньше
+        return [r.asset_1,r.asset_2,r.account_1,r.account_2,r.side_1,r.side_2,r.qty_ratio_1,r.qty_ratio_2,r.price_ratio_1,r.price_ratio_2,r.price,r.target_qty,r.exec_price,r.exec_qty,r.leaves_qty,r.strategy_name,r.price_1,r.price_2,r.hit_price,r.get_mdata,'',r.started,r.error];
+    }));
 }
 function savePairsOrder(){
     const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
