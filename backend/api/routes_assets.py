@@ -13,6 +13,7 @@ DELETE /api/assets/{id}     – удалить
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from db.database import get_session
 from db.models import Asset as AssetModel
@@ -51,9 +52,9 @@ async def create_asset(payload: AssetCreate, session: AsyncSession = Depends(get
     session.add(asset)
     try:
         await session.commit()
-    except Exception:
+    except IntegrityError:
         await session.rollback()
-        raise
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Asset already exists")
     await session.refresh(asset)
     return asset
 

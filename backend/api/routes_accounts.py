@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
@@ -50,7 +51,11 @@ async def list_accounts(session: AsyncSession = Depends(get_session)):
 async def create_account(payload: AccountCreate, session: AsyncSession = Depends(get_session)):
     acc = AccountModel(**payload.model_dump())
     session.add(acc)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account already exists")
     await session.refresh(acc)
     return acc
 
