@@ -320,13 +320,14 @@ document.getElementById('menu_add').onclick = ()=>{
 // Delete row
 document.getElementById('menu_del').onclick = ()=>{
     if(currentRow){
+        const dsId = currentRow.dataset && currentRow.dataset.id ? parseInt(currentRow.dataset.id,10): null;
         const code = currentRow.cells[0]?.textContent.trim();
-        if(code && window._assetIdMap && window._assetIdMap[code]){
-            deleteJson(`${API_BASE}/assets/${window._assetIdMap[code].id}`);
-        }
+        const id = dsId || (code && window._assetIdMap && window._assetIdMap[code] ? window._assetIdMap[code].id : null);
+        if(id){ deleteJson(`${API_BASE}/assets/${id}`); }
+        removeRowFromLocalStorage('assets', id, currentRow);
         currentRow.parentNode.removeChild(currentRow);
         currentRow = null;
-        saveAssetsTable();
+        // saveAssetsTable(); // LS уже обновили точечно
     }
     menu.style.display='none';
 };
@@ -364,13 +365,14 @@ document.getElementById('menu_del').onclick = ()=>{
  // Delete row
  document.getElementById('accounts_del').onclick = ()=>{
      if(currentAccRow){
+         const dsId = currentAccRow.dataset && currentAccRow.dataset.id ? parseInt(currentAccRow.dataset.id,10): null;
          const alias = currentAccRow.cells[0]?.textContent.trim();
-         if(alias && window._accountIdMap && window._accountIdMap[alias]){
-             deleteJson(`${API_BASE}/accounts/${window._accountIdMap[alias].id}`);
-         }
+         const id = dsId || (alias && window._accountIdMap && window._accountIdMap[alias] ? window._accountIdMap[alias].id : null);
+         if(id){ deleteJson(`${API_BASE}/accounts/${id}`); }
+         removeRowFromLocalStorage('accounts', id, currentAccRow);
          currentAccRow.parentNode.removeChild(currentAccRow);
          currentAccRow = null;
-         saveAccountsTable();
+         // saveAccountsTable(); // LS уже обновили точечно
      }
      accountsMenu.style.display='none';
  };
@@ -599,17 +601,22 @@ document.getElementById('pairs_add').onclick = ()=>{
 // Delete row via menu
 document.getElementById('pairs_del').onclick = ()=>{
     if(currentPairRow){
-        const a1 = cellById(currentPairRow,'asset_1')?.textContent.trim();
-        const a2 = cellById(currentPairRow,'asset_2')?.textContent.trim();
-        const key = a1 && a2 ? `${a1}|${a2}` : null;
-        if(key && window._pairsIdMap && window._pairsIdMap[key]){
-            deleteJson(`${API_BASE}/pairs/${window._pairsIdMap[key].id}`);
-            delete window._pairsIdMap[key];
+        const dsId = currentPairRow.dataset && currentPairRow.dataset.id ? parseInt(currentPairRow.dataset.id,10): null;
+        if(dsId){ deleteJson(`${API_BASE}/pairs/${dsId}`); }
+        else {
+            const a1 = cellById(currentPairRow,'asset_1')?.textContent.trim();
+            const a2 = cellById(currentPairRow,'asset_2')?.textContent.trim();
+            const key = a1 && a2 ? `${a1}|${a2}` : null;
+            if(key && window._pairsIdMap && window._pairsIdMap[key]){
+                deleteJson(`${API_BASE}/pairs/${window._pairsIdMap[key].id}`);
+                delete window._pairsIdMap[key];
+            }
         }
         closeRowWs(currentPairRow);
+        removeRowFromLocalStorage('pairs', dsId, currentPairRow);
         currentPairRow.parentNode.removeChild(currentPairRow);
         currentPairRow = null;
-        savePairsTable();
+        // savePairsTable(); // LS уже обновили точечно
     }
     pairsMenu.style.display='none';
 };
@@ -1368,4 +1375,25 @@ function persistRowToLocalStorage(tableType, tr, obj){
     const tbody = tableType==='assets'? assetsTbody: tableType==='accounts'? accountsTbody: pairsTbody;
     const idx = Array.from(tbody.rows).indexOf(tr);
     if(idx>=0){ arr[idx] = obj; localStorage.setItem(key, JSON.stringify(arr)); }
+}
+
+// Helper: remove row from LS by id (preferred) or by index fallback
+function removeRowFromLocalStorage(tableType, id, tr){
+    const key = tableType==='assets'? 'assets_table' : tableType==='accounts'? 'accounts_table' : 'pairs_table';
+    let arr=[]; try{ arr = JSON.parse(localStorage.getItem(key)||'[]'); }catch(_){ arr=[]; }
+    if(id){
+        // objects or arrays – if objects present, filter by id; if arrays, fall back to index
+        if(arr.length && typeof arr[0]==='object' && arr[0]!==null && !Array.isArray(arr[0])){
+            arr = arr.filter(x=> !x || x.id!==id);
+        } else if(tr){
+            const tbody = tableType==='assets'? assetsTbody: tableType==='accounts'? accountsTbody: pairsTbody;
+            const idx = Array.from(tbody.rows).indexOf(tr);
+            if(idx>=0){ arr.splice(idx,1); }
+        }
+    } else if(tr){
+        const tbody = tableType==='assets'? assetsTbody: tableType==='accounts'? accountsTbody: pairsTbody;
+        const idx = Array.from(tbody.rows).indexOf(tr);
+        if(idx>=0){ arr.splice(idx,1); }
+    }
+    localStorage.setItem(key, JSON.stringify(arr));
 }
