@@ -320,9 +320,7 @@ document.getElementById('menu_add').onclick = ()=>{
 // Delete row
 document.getElementById('menu_del').onclick = ()=>{
     if(currentRow){
-        const dsId = currentRow.dataset && currentRow.dataset.id ? parseInt(currentRow.dataset.id,10): null;
-        const code = currentRow.cells[0]?.textContent.trim();
-        const id = dsId || (code && window._assetIdMap && window._assetIdMap[code] ? window._assetIdMap[code].id : null);
+        const id = currentRow.dataset && currentRow.dataset.id ? parseInt(currentRow.dataset.id,10): null;
         if(id){ deleteJson(`${API_BASE}/assets/${id}`); }
         removeRowFromLocalStorage('assets', id, currentRow);
         currentRow.parentNode.removeChild(currentRow);
@@ -365,9 +363,7 @@ document.getElementById('menu_del').onclick = ()=>{
  // Delete row
  document.getElementById('accounts_del').onclick = ()=>{
      if(currentAccRow){
-         const dsId = currentAccRow.dataset && currentAccRow.dataset.id ? parseInt(currentAccRow.dataset.id,10): null;
-         const alias = currentAccRow.cells[0]?.textContent.trim();
-         const id = dsId || (alias && window._accountIdMap && window._accountIdMap[alias] ? window._accountIdMap[alias].id : null);
+         const id = currentAccRow.dataset && currentAccRow.dataset.id ? parseInt(currentAccRow.dataset.id,10): null;
          if(id){ deleteJson(`${API_BASE}/accounts/${id}`); }
          removeRowFromLocalStorage('accounts', id, currentAccRow);
          currentAccRow.parentNode.removeChild(currentAccRow);
@@ -601,19 +597,10 @@ document.getElementById('pairs_add').onclick = ()=>{
 // Delete row via menu
 document.getElementById('pairs_del').onclick = ()=>{
     if(currentPairRow){
-        const dsId = currentPairRow.dataset && currentPairRow.dataset.id ? parseInt(currentPairRow.dataset.id,10): null;
-        if(dsId){ deleteJson(`${API_BASE}/pairs/${dsId}`); }
-        else {
-            const a1 = cellById(currentPairRow,'asset_1')?.textContent.trim();
-            const a2 = cellById(currentPairRow,'asset_2')?.textContent.trim();
-            const key = a1 && a2 ? `${a1}|${a2}` : null;
-            if(key && window._pairsIdMap && window._pairsIdMap[key]){
-                deleteJson(`${API_BASE}/pairs/${window._pairsIdMap[key].id}`);
-                delete window._pairsIdMap[key];
-            }
-        }
+        const id = currentPairRow.dataset && currentPairRow.dataset.id ? parseInt(currentPairRow.dataset.id,10): null;
+        if(id){ deleteJson(`${API_BASE}/pairs/${id}`); }
         closeRowWs(currentPairRow);
-        removeRowFromLocalStorage('pairs', dsId, currentPairRow);
+        removeRowFromLocalStorage('pairs', id, currentPairRow);
         currentPairRow.parentNode.removeChild(currentPairRow);
         currentPairRow = null;
         // savePairsTable(); // LS уже обновили точечно
