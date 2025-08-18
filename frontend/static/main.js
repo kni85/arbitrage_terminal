@@ -969,7 +969,15 @@ async function patchJson(url,obj,extraHeaders={}){
         const res = await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});
         DEBUG_API && console.log('  <=', res.status);
         if(res.status===409){ alert('Конфликт при обновлении (409)'); return false; }
-        return res.ok;
+        if(!res.ok) return false;
+        // Пытаемся вернуть JSON-ответ, если он есть (FastAPI возвращает PairRead)
+        try{
+            const json = await res.json();
+            DEBUG_API && console.log('  JSON', json);
+            return json;
+        }catch(_){
+            return true; // 204 No Content или пустой ответ
+        }
     }catch(e){ DEBUG_API && console.error('PATCH error', e); return false; }
 }
 async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_){} }
@@ -1217,7 +1225,8 @@ async function syncPairs(rows){
             const id = map[key].id;
             // optimistic-lock header (optional)
             const hdr = map[key].updated_at ? {'If-Unmodified-Since': map[key].updated_at}: {};
-            await patchJson(`${API_BASE}/pairs/${id}`, payload, hdr);
+            const patched = await patchJson(`${API_BASE}/pairs/${id}`, payload, hdr);
+            if(patched && patched.updated_at){ map[key].updated_at = patched.updated_at; }
         }
     }
 }
