@@ -1329,6 +1329,25 @@ async function ensureRowPersisted(tableType, tr){
     const id = tr.dataset.id ? parseInt(tr.dataset.id, 10) : null;
     const base = `${API_BASE}/${tableType}`;
     if(!id){
+        // Если есть натуральный ключ – попробуем найти существующую запись и сделать PATCH вместо POST
+        if(tableType==='assets' && rowData.code){
+            const ex = window._assetsByCode && window._assetsByCode[rowData.code];
+            if(ex && ex.id){
+                tr.dataset.id = String(ex.id);
+                await patchJson(`${base}/${ex.id}`, rowData);
+                persistRowToLocalStorage(tableType, tr, { ...rowData, id: ex.id });
+                return;
+            }
+        }
+        if(tableType==='accounts' && rowData.alias){
+            const ex = window._accountsByAlias && window._accountsByAlias[rowData.alias];
+            if(ex && ex.id){
+                tr.dataset.id = String(ex.id);
+                await patchJson(`${base}/${ex.id}`, rowData);
+                persistRowToLocalStorage(tableType, tr, { ...rowData, id: ex.id });
+                return;
+            }
+        }
         const created = await postJson(`${base}/`, rowData);
         if(created && created.id){
             tr.dataset.id = String(created.id);
