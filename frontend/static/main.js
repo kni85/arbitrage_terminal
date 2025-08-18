@@ -1041,6 +1041,8 @@ async function backendSync(){
         localStorage.setItem('assets_table', JSON.stringify(server));
         // build in-memory map for fast lookup and deletes
         window._assetIdMap = Object.fromEntries(server.map(a=>[a.code,a]));
+        // дополнительно: универсальный кэш по ключу code||__id_<id>
+        window._assetsByCode = Object.fromEntries((server||[]).map(a=>[(a.code||`__id_${a.id}`), a]));
     }catch(_){}
     // Accounts
     try{
@@ -1048,6 +1050,7 @@ async function backendSync(){
         if(server===null) throw new Error('no server');
         localStorage.setItem('accounts_table', JSON.stringify(server));
         window._accountIdMap = Object.fromEntries(server.map(a=>[a.alias,a]));
+        window._accountsByAlias = Object.fromEntries((server||[]).map(a=>[(a.alias||`__id_${a.id}`), a]));
     }catch(_){}
     // Columns (order & widths)
     try{
@@ -1084,6 +1087,8 @@ async function backendSync(){
         localStorage.setItem('pairs_table', JSON.stringify(server));
         // build map asset1|asset2 -> pair object
         window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
+        // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
+        window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
     }catch(_){}
 }
 // ---------------------------------------------------------------------
