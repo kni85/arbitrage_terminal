@@ -381,9 +381,13 @@ document.getElementById('menu_del').onclick = ()=>{
      let rows;
      try { rows = JSON.parse(data);}catch(e){ console.error(e); return; }
      accountsTbody.innerHTML='';
-     rows.forEach(rowData=>{
+     rows.forEach(item=>{
          const row = accountsTbody.insertRow(-1);
-         rowData.forEach(cellText=>{
+         const cells = Array.isArray(item)
+             ? item
+             : [item.alias||'', '', item.account_number||'', item.client_code||''];
+         if(item && item.id) row.dataset.id = String(item.id);
+         cells.forEach(cellText=>{
              const cell = row.insertCell(-1);
              cell.textContent = cellText;
              cell.contentEditable='true';
@@ -563,6 +567,7 @@ function addPairsRow(data){
 
     // initial hit price
     updateHitPrice(row);
+    return row;
 }
 
 // Hide menu on any click outside
@@ -629,7 +634,20 @@ function restorePairsTable(){
     let rows;
     try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
     pairsTbody.innerHTML='';
-    rows.forEach(rowData=> addPairsRow(rowData));
+    rows.forEach(item=>{
+        if(Array.isArray(item)){
+            addPairsRow(item);
+        } else if(item && typeof item==='object'){
+            const arr = [
+                item.asset_1||'', item.asset_2||'', item.account_1||'', item.account_2||'', item.side_1||'BUY', item.side_2||'BUY',
+                item.qty_ratio_1??'', item.qty_ratio_2??'', item.price_ratio_1??'', item.price_ratio_2??'', item.price??'',
+                item.target_qty??'', item.exec_price??'', item.exec_qty??'0', item.leaves_qty??'', item.strategy_name||'',
+                item.price_1??'', item.price_2??'', item.hit_price??'', !!item.get_mdata, '', !!item.started, item.error||''
+            ];
+            const r = addPairsRow(arr);
+            if(item.id) r.dataset.id = String(item.id);
+        }
+    });
     // после восстановления данных восстановим ширины столбцов
     restorePairsWidths();
 }
@@ -927,9 +945,14 @@ function restoreAssetsTable(){
     let rows;
     try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
     assetsTbody.innerHTML='';
-    rows.forEach(rowData=>{
+    rows.forEach(item=>{
         const row = assetsTbody.insertRow(-1);
-        rowData.forEach(cellText=>{
+        // поддерживаем объектную и массивную форму
+        const cells = Array.isArray(item)
+            ? item
+            : [item.code||'', item.name||'', item.class_code||'', item.sec_code||'', (item.price_step??'')];
+        if(item && item.id) row.dataset.id = String(item.id);
+        cells.forEach(cellText=>{
             const cell = row.insertCell(-1);
             cell.textContent = cellText;
             cell.contentEditable = 'true';
@@ -991,8 +1014,8 @@ async function backendSync(){
     try{
         const server = await fetchJson(`${API_BASE}/assets`);
         if(server===null) throw new Error('no server');
-        const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
-        localStorage.setItem('assets_table', JSON.stringify(srvRows));
+        // Сохраняем как пришло (включая id)
+        localStorage.setItem('assets_table', JSON.stringify(server));
         // build in-memory map for fast lookup and deletes
         window._assetIdMap = Object.fromEntries(server.map(a=>[a.code,a]));
     }catch(_){}
@@ -1000,8 +1023,7 @@ async function backendSync(){
     try{
         const server = await fetchJson(`${API_BASE}/accounts`);
         if(server===null) throw new Error('no server');
-        const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
-        localStorage.setItem('accounts_table', JSON.stringify(srvRows));
+        localStorage.setItem('accounts_table', JSON.stringify(server));
         window._accountIdMap = Object.fromEntries(server.map(a=>[a.alias,a]));
     }catch(_){}
     // Columns (order & widths)
@@ -1014,6 +1036,8 @@ async function backendSync(){
                 const widths = cols.map(c=>c.width||0);
                 localStorage.setItem('pairs_col_order', JSON.stringify(order));
                 localStorage.setItem('pairs_col_widths', JSON.stringify(widths));
+                // также сохраним полный список столбцов
+                localStorage.setItem('pairs_columns', JSON.stringify(cols));
             }
         }
     }catch(_){}
@@ -1026,22 +1050,17 @@ async function backendSync(){
                     localStorage.setItem(s.key, s.value);
                 }
             });
+            localStorage.setItem('settings', JSON.stringify(settings));
         }
     }catch(_){}
     // Pairs
     try{
         const server = await fetchJson(`${API_BASE}/pairs`);
         if(server===null) throw new Error('no server');
-        if(server.length){
-            const srvRows = server.map(p=>[
-                p.asset_1,p.asset_2,p.account_1||'',p.account_2||'',p.side_1||'BUY',p.side_2||'BUY',
-                p.qty_ratio_1||'',p.qty_ratio_2||'',p.price_ratio_1||'',p.price_ratio_2||'',p.price||'',
-                p.target_qty||'',p.exec_price||'',p.exec_qty||'0',p.leaves_qty||'',p.strategy_name||'',p.price_1||'',p.price_2||'',p.hit_price||'',p.get_mdata||false,'',p.started||false,p.error||''
-            ]);
-            localStorage.setItem('pairs_table', JSON.stringify(srvRows));
-            // build map asset1|asset2 -> pair object
-            window._pairsIdMap = Object.fromEntries(server.map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
-        }
+        // сохраняем как есть (включая id), даже если пусто
+        localStorage.setItem('pairs_table', JSON.stringify(server));
+        // build map asset1|asset2 -> pair object
+        window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
     }catch(_){}
 }
 // ---------------------------------------------------------------------
