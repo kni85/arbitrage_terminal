@@ -1096,7 +1096,7 @@ async function syncAssets(rows){ /* no-op if fetch fails */
         const ex = byCode[code];
         if(!ex){
             // Для создания нужны обязательные non-null поля class_code, sec_code
-            if(clean.class_code && clean.sec_code){ await postJson(`${API_BASE}/assets`, clean); }
+            if(clean.class_code && clean.sec_code){ await postJson(`${API_BASE}/assets/`, clean); }
         } else {
             const diff = {};
             if(clean.name && clean.name!==ex.name) diff.name = clean.name;
@@ -1127,7 +1127,7 @@ async function syncAccounts(rows){
         const ex = byAlias[alias];
         if(!ex){
             // для создания требуются все поля
-            if(clean.account_number && clean.client_code){ await postJson(`${API_BASE}/accounts`, clean); }
+            if(clean.account_number && clean.client_code){ await postJson(`${API_BASE}/accounts/`, clean); }
         } else {
             const diff = {};
             if(clean.account_number && clean.account_number!==ex.account_number) diff.account_number = clean.account_number;
@@ -1206,7 +1206,7 @@ async function syncPairs(rows){
 
         if(!map[key]){
             // create new pair
-            const res = await fetch(`${API_BASE}/pairs`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const res = await fetch(`${API_BASE}/pairs/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
             if(res.ok){
                 const created = await res.json().catch(()=>null);
                 if(created && created.id){ map[key]=created; }
