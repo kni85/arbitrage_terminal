@@ -992,6 +992,8 @@ async function backendSync(){
         if(server===null) throw new Error('no server');
         const srvRows = server.map(a=>[a.code,a.name||'',a.class_code,a.sec_code,a.price_step||'']);
         localStorage.setItem('assets_table', JSON.stringify(srvRows));
+        // build in-memory map for fast lookup and deletes
+        window._assetIdMap = Object.fromEntries(server.map(a=>[a.code,a]));
     }catch(_){}
     // Accounts
     try{
@@ -1106,7 +1108,10 @@ async function syncAssets(rows){ /* no-op if fetch fails */
         const ex = byCode[code];
         if(!ex){
             // Для создания нужны обязательные non-null поля class_code, sec_code
-            if(clean.class_code && clean.sec_code){ await postJson(`${API_BASE}/assets/`, clean); }
+            if(clean.class_code && clean.sec_code){
+                const created = await postJson(`${API_BASE}/assets/`, clean);
+                if(created && created.id){ byCode[code] = created; }
+            }
         } else {
             const diff = {};
             if(clean.name && clean.name!==ex.name) diff.name = clean.name;
@@ -1116,6 +1121,8 @@ async function syncAssets(rows){ /* no-op if fetch fails */
             if(Object.keys(diff).length){ await patchJson(`${API_BASE}/assets/${ex.id}`, diff); }
         }
     }
+    // update global map after sync
+    window._assetIdMap = byCode;
 }
 
 async function syncAccounts(rows){
