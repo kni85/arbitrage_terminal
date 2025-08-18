@@ -22,6 +22,7 @@ from sqlalchemy import (
     Enum,
     UniqueConstraint,
     Index,
+    inspect,
 )
 from sqlalchemy.dialects.sqlite import JSON  # заменится на JSONB/JSON для PostgreSQL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -57,9 +58,10 @@ class Account(Base):
     __tablename__ = "accounts_table"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    alias: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    account_number: Mapped[str] = mapped_column(String(32), nullable=False)
-    client_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Разрешаем NULL для поддержки черновиков строк
+    alias: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    client_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -76,11 +78,12 @@ class Asset(Base):
     __tablename__ = "assets_table"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    # Разрешаем NULL/пустые значения для поддержки «черновиков»
+    code: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     name: Mapped[str | None] = mapped_column(String(128))
 
-    class_code: Mapped[str] = mapped_column(String(16), nullable=False)
-    sec_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    class_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sec_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price_step: Mapped[float | None] = mapped_column(Numeric(18, 6))
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -96,8 +99,9 @@ class Pair(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    asset_1: Mapped[str] = mapped_column(String(32), nullable=False)
-    asset_2: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Все бизнес-поля делаем nullable=True для черновиков
+    asset_1: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    asset_2: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     account_1: Mapped[str | None] = mapped_column(String(64))
     account_2: Mapped[str | None] = mapped_column(String(64))
@@ -124,8 +128,8 @@ class Pair(Base):
     price_2: Mapped[float | None] = mapped_column(Numeric(18, 6))
     hit_price: Mapped[float | None] = mapped_column(Numeric(18, 6))
 
-    get_mdata: Mapped[bool] = mapped_column(Boolean, default=False)
-    started: Mapped[bool] = mapped_column(Boolean, default=False)
+    get_mdata: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    started: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
     error: Mapped[str | None] = mapped_column(String(256))
 
@@ -318,3 +322,16 @@ class Trade(Base):
 
     def __repr__(self) -> str:  # noqa: D401
         return f"<Trade {self.instrument.ticker} {self.ts:%H:%M:%S} {self.side} {self.qty}@{self.price}>"
+
+
+if __name__ == "__main__":
+    # Простейшая проверка nullable-столбцов в основных таблицах GUI
+    from sqlalchemy import create_engine
+    eng = create_engine("sqlite:///arbitrage.db")
+    insp = inspect(eng)
+    for table in ("assets_table", "accounts_table", "pairs_table"):
+        try:
+            cols = {c['name']: c['nullable'] for c in insp.get_columns(table)}
+            print(f"{table} nullable:", cols)
+        except Exception as e:  # pragma: no cover
+            print(f"inspect {table} failed:", e)
