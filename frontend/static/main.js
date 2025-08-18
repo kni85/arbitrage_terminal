@@ -1166,13 +1166,15 @@ function saveField(el){
 // ---------------------------------------------------------------------
 
 // Helper sync functions (global, used by save*Table) ------------------
-async function syncAssets(rows){ /* no-op if fetch fails */
+async function syncAssets(rows){ /* id-first, then fallback by code */
     const existing = await fetchJson(`${API_BASE}/assets`)||[];
+    const byId = Object.fromEntries(existing.map(a=>[a.id, a]));
     const byCode = Object.fromEntries(existing.map(a=>[(a.code||`__id_${a.id}`), a]));
-    // Нормализуем вход: rows (массив массивов) -> объекты; иначе читаем из LS
+    // нормализуем вход в объекты; если rows не переданы или не массив массивов – читаем из LS
     let rowsObj = [];
     if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
         rowsObj = rows.map(r=>({
+            id: null,
             code: (r[0]||'').trim()||undefined,
             name: (r[1]||'').trim()||undefined,
             class_code: (r[2]||'').trim()||undefined,
@@ -1183,25 +1185,35 @@ async function syncAssets(rows){ /* no-op if fetch fails */
         try{ rowsObj = JSON.parse(localStorage.getItem('assets_table')||'[]')||[]; }catch(_){ rowsObj=[]; }
     }
     for (const r of rowsObj){
-        const codeKey = (r && r.code) ? r.code : `__id_${(r&&r.id)||crypto.randomUUID()}`;
-        const ex = byCode[codeKey];
-        const clean = {...r};
-        if(!ex){
-            const created = await postJson(`${API_BASE}/assets/`, clean);
-            if(created && created.id){ byCode[codeKey] = created; }
+        if(r && r.id && byId[r.id]){
+            await patchJson(`${API_BASE}/assets/${r.id}`, r);
+            byId[r.id] = { ...byId[r.id], ...r };
+            continue;
+        }
+        const key = (r && r.code) ? r.code : `__id_${(r&&r.id)||crypto.randomUUID()}`;
+        const ex = byCode[key];
+        if(ex && ex.id){
+            await patchJson(`${API_BASE}/assets/${ex.id}`, r);
+            byId[ex.id] = { ...ex, ...r };
         } else {
-            await patchJson(`${API_BASE}/assets/${ex.id}`, clean);
+            const created = await postJson(`${API_BASE}/assets/`, r);
+            if(created && created.id){
+                byId[created.id] = created;
+                byCode[(r && r.code) ? r.code : `__id_${created.id}`] = created;
+            }
         }
     }
-    window._assetIdMap = byCode;
+    window._assetsByCode = Object.fromEntries(Object.values(byId).map(a => [a.code || `__id_${a.id}`, a]));
 }
 
-async function syncAccounts(rows){
+async function syncAccounts(rows){ /* id-first, then fallback by alias */
     const existing = await fetchJson(`${API_BASE}/accounts`)||[];
+    const byId = Object.fromEntries(existing.map(a=>[a.id, a]));
     const byAlias = Object.fromEntries(existing.map(a=>[(a.alias||`__id_${a.id}`), a]));
     let rowsObj = [];
     if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
         rowsObj = rows.map(r=>({
+            id: null,
             alias: (r[0]||'').trim()||undefined,
             account_number: (r[2]||'').trim()||undefined,
             client_code: (r[3]||'').trim()||undefined,
@@ -1210,17 +1222,25 @@ async function syncAccounts(rows){
         try{ rowsObj = JSON.parse(localStorage.getItem('accounts_table')||'[]')||[]; }catch(_){ rowsObj=[]; }
     }
     for (const r of rowsObj){
-        const aliasKey = (r && r.alias) ? r.alias : `__id_${(r&&r.id)||crypto.randomUUID()}`;
-        const ex = byAlias[aliasKey];
-        const clean = {...r};
-        if(!ex){
-            const created = await postJson(`${API_BASE}/accounts/`, clean);
-            if(created && created.id){ byAlias[aliasKey] = created; }
+        if(r && r.id && byId[r.id]){
+            await patchJson(`${API_BASE}/accounts/${r.id}`, r);
+            byId[r.id] = { ...byId[r.id], ...r };
+            continue;
+        }
+        const key = (r && r.alias) ? r.alias : `__id_${(r&&r.id)||crypto.randomUUID()}`;
+        const ex = byAlias[key];
+        if(ex && ex.id){
+            await patchJson(`${API_BASE}/accounts/${ex.id}`, r);
+            byId[ex.id] = { ...ex, ...r };
         } else {
-            await patchJson(`${API_BASE}/accounts/${ex.id}`, clean);
+            const created = await postJson(`${API_BASE}/accounts/`, r);
+            if(created && created.id){
+                byId[created.id] = created;
+                byAlias[(r && r.alias) ? r.alias : `__id_${created.id}`] = created;
+            }
         }
     }
-    window._accountIdMap = byAlias;
+    window._accountsByAlias = Object.fromEntries(Object.values(byId).map(a => [a.alias || `__id_${a.id}`, a]));
 }
 
 async function syncColumns(order,widths){
