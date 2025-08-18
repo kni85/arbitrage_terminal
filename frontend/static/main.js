@@ -1001,6 +1001,7 @@ async function backendSync(){
         if(server===null) throw new Error('no server');
         const srvRows = server.map(a=>[a.alias,'',a.account_number,a.client_code]);
         localStorage.setItem('accounts_table', JSON.stringify(srvRows));
+        window._accountIdMap = Object.fromEntries(server.map(a=>[a.alias,a]));
     }catch(_){}
     // Columns (order & widths)
     try{
@@ -1152,6 +1153,7 @@ async function syncAccounts(rows){
             if(Object.keys(diff).length){ await patchJson(`${API_BASE}/accounts/${ex.id}`, diff); }
         }
     }
+    window._accountIdMap = byAlias;
 }
 
 async function syncColumns(order,widths){
