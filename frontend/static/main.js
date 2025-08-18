@@ -994,6 +994,7 @@ async function fetchJson(url){
 }
 async function postJson(url,obj){
     try{
+        console.log('[POST]', url, obj);
         DEBUG_API && console.log('[POST]', url, obj);
         const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
         DEBUG_API && console.log('  <=', res.status);
@@ -1003,6 +1004,7 @@ async function postJson(url,obj){
 }
 async function patchJson(url,obj,extraHeaders={}){
     try{
+        console.log('[PATCH]', url, obj);
         DEBUG_API && console.log('[PATCH]', url, obj, extraHeaders);
         const res = await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});
         DEBUG_API && console.log('  <=', res.status);
@@ -1018,7 +1020,14 @@ async function patchJson(url,obj,extraHeaders={}){
         }
     }catch(e){ DEBUG_API && console.error('PATCH error', e); return false; }
 }
-async function deleteJson(url){ try{ await fetch(url,{method:'DELETE'});}catch(_){} }
+async function deleteJson(url){
+    try{
+        console.log('[DELETE]', url);
+        const res = await fetch(url,{method:'DELETE'});
+        if(!res.ok){ console.warn('DELETE failed', res.status); }
+        return res.ok;
+    }catch(e){ console.warn('DELETE error', e); return false; }
+}
 if(DEBUG_API) console.log('DEBUG_API enabled');
 // ==== Helper HTTP methods reused ====
 // ---------------------------------------------------------------------
