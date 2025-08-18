@@ -994,7 +994,8 @@ async function postJson(url,obj){
         const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
         DEBUG_API && console.log('  <=', res.status);
         if(res.status===409){ alert('Запись уже существует (409)'); return false; }
-        return res.ok ? await res.json().catch(()=>true): false;
+        if(!res.ok){ alert(`POST ${url} -> ${res.status}`); return false; }
+        return await res.json().catch(()=>true);
     }catch(e){ DEBUG_API && console.error('POST error', e); return false; }
 }
 async function patchJson(url,obj,extraHeaders={}){
@@ -1004,7 +1005,7 @@ async function patchJson(url,obj,extraHeaders={}){
         const res = await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json',...extraHeaders},body:JSON.stringify(obj)});
         DEBUG_API && console.log('  <=', res.status);
         if(res.status===409){ alert('Конфликт при обновлении (409)'); return false; }
-        if(!res.ok) return false;
+        if(!res.ok){ alert(`PATCH ${url} -> ${res.status}`); return false; }
         // Пытаемся вернуть JSON-ответ, если он есть (FastAPI возвращает PairRead)
         try{
             const json = await res.json();
@@ -1019,7 +1020,7 @@ async function deleteJson(url){
     try{
         console.log('[DELETE]', url);
         const res = await fetch(url,{method:'DELETE'});
-        if(!res.ok){ console.warn('DELETE failed', res.status); }
+        if(!res.ok){ console.warn('DELETE failed', res.status); alert(`DELETE ${url} -> ${res.status}`); }
         return res.ok;
     }catch(e){ console.warn('DELETE error', e); return false; }
 }
