@@ -221,7 +221,6 @@ class SettingRead(SettingBase):
 
 
 class SettingUpdate(BaseModel):
-    value: Optional[str] = None
     value: Any = None
 
 

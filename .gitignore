@@ -196,3 +196,4 @@ patch_1_schemas.diff
 patch_3_exclude_none.diff
 patch_2_routes_settings.diff
 patch_4_schemas_selftest.diff
+patch_schemas_settingupdate.diff
