@@ -1149,7 +1149,7 @@ async function syncAssets(rows){ /* id-first, then fallback by code */
     let rowsObj = [];
     if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
         rowsObj = rows.map(r=>({
-            id: null,
+            // НЕ сбрасываем id, если он есть в исходных данных
             code: (r[0]||'').trim()||undefined,
             name: (r[1]||'').trim()||undefined,
             class_code: (r[2]||'').trim()||undefined,
@@ -1190,7 +1190,7 @@ async function syncAccounts(rows){ /* id-first, then fallback by alias */
     let rowsObj = [];
     if(Array.isArray(rows) && rows.length && Array.isArray(rows[0])){
         rowsObj = rows.map(r=>({
-            id: null,
+            // НЕ сбрасываем id, если он есть в исходных данных
             alias: (r[0]||'').trim()||undefined,
             account_number: (r[2]||'').trim()||undefined,
             client_code: (r[3]||'').trim()||undefined,
