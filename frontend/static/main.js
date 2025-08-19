@@ -277,7 +277,7 @@ function attachEditableHandlers(row, tableType){
                     return td.blur();
                 } else if(tableType==='accounts'){
                     const tr = td.closest('tr');
-                    ensureRowPersisted('accounts', tr).then(()=>{ saveAccountsTable(); });
+                    ensureRowPersisted('accounts', tr); // saveAccountsTable() не нужен - ensureRowPersisted уже сохраняет
                     return td.blur();
                 }
                 td.blur();
@@ -293,7 +293,7 @@ function attachEditableHandlers(row, tableType){
                 ensureRowPersisted('assets', tr).then(()=>{ saveAssetsTable(); });
             } else if(tableType==='accounts'){
                 const tr = td.closest('tr');
-                ensureRowPersisted('accounts', tr).then(()=>{ saveAccountsTable(); });
+                ensureRowPersisted('accounts', tr); // saveAccountsTable() не нужен - ensureRowPersisted уже сохраняет
             }
         });
     });
@@ -357,7 +357,7 @@ document.getElementById('menu_del').onclick = ()=>{
      }
      attachEditableHandlers(row,'accounts');
      accountsMenu.style.display='none';
-     saveAccountsTable();
+     // saveAccountsTable(); // убрано - новая строка пустая, синхронизация произойдёт при заполнении
  };
 
  // Delete row
