@@ -1348,8 +1348,11 @@ async function ensureRowPersisted(tableType, tr){
             }
         }
         // Проверяем, что есть хотя бы одно значимое поле для POST
-        const hasData = Object.values(rowData).some(v => v !== null && v !== '' && v !== undefined);
-        if(!hasData) return; // Не создаём пустые записи
+        const hasData = Object.values(rowData).some(v => v !== null && v !== '' && v !== undefined && v !== 0);
+        if(!hasData) {
+            console.log('Skipping POST - no meaningful data:', rowData);
+            return; // Не создаём пустые записи
+        }
         
         const created = await postJson(`${base}/`, rowData);
         if(created && created.id){
