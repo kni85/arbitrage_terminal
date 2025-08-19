@@ -935,19 +935,6 @@ function restoreFields(){
     });
 }
 
-function saveAssetsTable(){
-    const rows = Array.from(assetsTbody.rows).map(tr=>({
-        id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null,
-        code: (tr.cells[0]?.textContent||'').trim()||'',
-        name: (tr.cells[1]?.textContent||'').trim()||'',
-        class_code: (tr.cells[2]?.textContent||'').trim()||'',
-        sec_code: (tr.cells[3]?.textContent||'').trim()||'',
-        price_step: (tr.cells[4] && tr.cells[4].textContent!==''? parseFloat(tr.cells[4].textContent): null),
-    }));
-    localStorage.setItem('assets_table', JSON.stringify(rows));
-    syncAssets(rows);
-}
-
 function restoreAssetsTable(){
     const data = localStorage.getItem('assets_table');
     if(!data) return;
@@ -965,7 +952,7 @@ function restoreAssetsTable(){
             const cell = row.insertCell(-1);
             cell.textContent = cellText;
             cell.contentEditable = 'true';
-            cell.dataset.value = (cellText||'').trim();
+            cell.dataset.value = String(cellText||'').trim();
         });
         attachEditableHandlers(row,'assets');
     });
@@ -1184,7 +1171,9 @@ async function syncAssets(rows){ /* id-first, then fallback by code */
             await patchJson(`${API_BASE}/assets/${ex.id}`, r);
             byId[ex.id] = { ...ex, ...r };
         } else {
-            const created = await postJson(`${API_BASE}/assets/`, r);
+            // Исключаем id из POST запроса
+            const {id, ...postData} = r;
+            const created = await postJson(`${API_BASE}/assets/`, postData);
             if(created && created.id){
                 byId[created.id] = created;
                 byCode[(r && r.code) ? r.code : `__id_${created.id}`] = created;
@@ -1221,7 +1210,9 @@ async function syncAccounts(rows){ /* id-first, then fallback by alias */
             await patchJson(`${API_BASE}/accounts/${ex.id}`, r);
             byId[ex.id] = { ...ex, ...r };
         } else {
-            const created = await postJson(`${API_BASE}/accounts/`, r);
+            // Исключаем id из POST запроса
+            const {id, ...postData} = r;
+            const created = await postJson(`${API_BASE}/accounts/`, postData);
             if(created && created.id){
                 byId[created.id] = created;
                 byAlias[(r && r.alias) ? r.alias : `__id_${created.id}`] = created;
