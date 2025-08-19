@@ -1083,7 +1083,7 @@ function saveAssetsTable(){
         price_step: (tr.cells[4] && tr.cells[4].textContent!==''? parseFloat(tr.cells[4].textContent): null),
     }));
     localStorage.setItem('assets_table', JSON.stringify(rows));
-    syncAssets(rows);
+    // syncAssets(rows); // убрано - ensureRowPersisted уже синхронизирует данные с сервером
 }
 function saveAccountsTable(){
     const rows = Array.from(accountsTbody.rows).map(tr=>({
@@ -1093,7 +1093,7 @@ function saveAccountsTable(){
         client_code: (tr.cells[3]?.textContent||'').trim()||'',
     }));
     localStorage.setItem('accounts_table', JSON.stringify(rows));
-    syncAccounts(rows);
+    // syncAccounts(rows); // убрано - ensureRowPersisted уже синхронизирует данные с сервером
 }
 function savePairsTable(){
     const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
