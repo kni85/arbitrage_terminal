@@ -374,11 +374,7 @@ document.getElementById('menu_del').onclick = ()=>{
  };
 
  // --- Autosave on each keystroke in accounts table --------------------
-
- function saveAccountsTable(){
-     const rows = Array.from(accountsTbody.rows).map(r=>Array.from(r.cells).map(c=>c.textContent));
-     localStorage.setItem('accounts_table', JSON.stringify(rows));
- }
+ // УДАЛЕНА: старая функция saveAccountsTable() - заменена на новую версию ниже
 
  function restoreAccountsTable(){
      const data = localStorage.getItem('accounts_table');
