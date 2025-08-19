@@ -190,3 +190,9 @@ SYNC_error.md
 SYNC_error_todos.md
 SYNC_error_2.md
 SYNC_error_2_todos.md
+
+#diffs
+patch_1_schemas.diff
+patch_3_exclude_none.diff
+patch_2_routes_settings.diff
+patch_4_schemas_selftest.diff

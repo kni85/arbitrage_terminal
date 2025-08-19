@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 
@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class AccountBase(BaseModel):
-    alias: str = Field(..., max_length=64)
-    account_number: str = Field(..., max_length=32)
-    client_code: str = Field(..., max_length=32)
+    # Разрешаем пустые значения для черновиков -> Optional[str]
+    alias: Optional[str] = Field(None, max_length=64)
+    account_number: Optional[str] = Field(None, max_length=32)
+    client_code: Optional[str] = Field(None, max_length=32)
 
 
 class AccountCreate(BaseModel):
@@ -50,10 +51,11 @@ class AccountUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AssetBase(BaseModel):
-    code: str = Field(..., max_length=32)
+    # Поля могут быть пустыми для черновиков -> Optional[str]
+    code: Optional[str] = Field(None, max_length=32)
     name: Optional[str] = Field(None, max_length=128)
-    class_code: str = Field(..., max_length=16)
-    sec_code: str = Field(..., max_length=32)
+    class_code: Optional[str] = Field(None, max_length=16)
+    sec_code: Optional[str] = Field(None, max_length=32)
     price_step: Optional[float] = None
 
 
@@ -84,8 +86,9 @@ class AssetUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PairBase(BaseModel):
-    asset_1: str
-    asset_2: str
+    # Тоже могут быть не заполнены на этапе черновика
+    asset_1: Optional[str] = None
+    asset_2: Optional[str] = None
 
     account_1: Optional[str] = None
     account_2: Optional[str] = None
@@ -204,7 +207,8 @@ class PairsColumnUpdate(BaseModel):
 
 class SettingBase(BaseModel):
     key: str = Field(..., max_length=64)
-    value: Optional[str] = None
+    # value может быть bool/number/str/object/null -> Any
+    value: Any = None
 
 
 class SettingCreate(SettingBase):
