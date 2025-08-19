@@ -229,3 +229,7 @@ if __name__ == "__main__":
     print("AssetCreate empty ok:", AssetCreate())
     print("AccountCreate empty ok:", AccountCreate())
     print("PairCreate empty ok:", PairCreate())
+    # Простейшие тесты валидации: None допускается
+    print("AssetRead(None fields) -> ok:", AssetRead(id=1, code=None, class_code=None, sec_code=None, updated_at=datetime.utcnow(), name=None, price_step=None))
+    print("AccountRead(None fields) -> ok:", AccountRead(id=1, alias=None, account_number=None, client_code=None, updated_at=datetime.utcnow()))
+    print("PairRead(None assets) -> ok:", PairRead(id=1, asset_1=None, asset_2=None, updated_at=datetime.utcnow()))
