@@ -40,7 +40,7 @@ async def _get_asset_or_404(session: AsyncSession, asset_id: int) -> AssetModel:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[AssetRead])
+@router.get("/", response_model=list[AssetRead], response_model_exclude_none=True)
 async def list_assets(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AssetModel))
     return res.scalars().all()

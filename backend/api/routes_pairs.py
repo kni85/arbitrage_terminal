@@ -56,7 +56,7 @@ def _check_lock(pair: PairModel, if_unmodified_since: str | None):  # noqa: D401
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[PairRead])
+@router.get("/", response_model=list[PairRead], response_model_exclude_none=True)
 async def list_pairs(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(PairModel))
     return res.scalars().all()

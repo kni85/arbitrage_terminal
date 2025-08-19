@@ -41,7 +41,7 @@ async def _get_account_or_404(session: AsyncSession, acc_id: int) -> AccountMode
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[AccountRead])
+@router.get("/", response_model=list[AccountRead], response_model_exclude_none=True)
 async def list_accounts(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(AccountModel))
     return res.scalars().all()
