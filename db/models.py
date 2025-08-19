@@ -59,7 +59,7 @@ class Account(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # Разрешаем NULL для поддержки черновиков строк
-    alias: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    alias: Mapped[str | None] = mapped_column(String(64), nullable=True)
     account_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     client_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
@@ -79,7 +79,7 @@ class Asset(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # Разрешаем NULL/пустые значения для поддержки «черновиков»
-    code: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
+    code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     name: Mapped[str | None] = mapped_column(String(128))
 
     class_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
