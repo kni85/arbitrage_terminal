@@ -222,6 +222,7 @@ class SettingRead(SettingBase):
 
 class SettingUpdate(BaseModel):
     value: Optional[str] = None
+    value: Any = None
 
 
 if __name__ == "__main__":
