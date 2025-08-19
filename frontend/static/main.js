@@ -396,7 +396,7 @@ document.getElementById('menu_del').onclick = ()=>{
              const cell = row.insertCell(-1);
              cell.textContent = cellText;
              cell.contentEditable='true';
-             cell.dataset.value = (cellText||'').trim();
+             cell.dataset.value = String(cellText||'').trim();
          });
          attachEditableHandlers(row,'accounts');
      });
@@ -641,9 +641,9 @@ function restorePairsTable(){
         } else if(item && typeof item==='object'){
             const arr = [
                 item.asset_1||'', item.asset_2||'', item.account_1||'', item.account_2||'', item.side_1||'BUY', item.side_2||'BUY',
-                item.qty_ratio_1??'', item.qty_ratio_2??'', item.price_ratio_1??'', item.price_ratio_2??'', item.price??'',
-                item.target_qty??'', item.exec_price??'', item.exec_qty??'0', item.leaves_qty??'', item.strategy_name||'',
-                item.price_1??'', item.price_2??'', item.hit_price??'', !!item.get_mdata, '', !!item.started, item.error||''
+                String(item.qty_ratio_1??''), String(item.qty_ratio_2??''), String(item.price_ratio_1??''), String(item.price_ratio_2??''), String(item.price??''),
+                String(item.target_qty??''), String(item.exec_price??''), String(item.exec_qty??'0'), String(item.leaves_qty??''), item.strategy_name||'',
+                String(item.price_1??''), String(item.price_2??''), String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
             ];
             const r = addPairsRow(arr);
             if(item.id) r.dataset.id = String(item.id);
@@ -946,7 +946,7 @@ function restoreAssetsTable(){
         // поддерживаем объектную и массивную форму
         const cells = Array.isArray(item)
             ? item
-            : [item.code||'', item.name||'', item.class_code||'', item.sec_code||'', (item.price_step??'')];
+            : [item.code||'', item.name||'', item.class_code||'', item.sec_code||'', String(item.price_step??'')];
         if(item && item.id) row.dataset.id = String(item.id);
         cells.forEach(cellText=>{
             const cell = row.insertCell(-1);
@@ -1347,6 +1347,10 @@ async function ensureRowPersisted(tableType, tr){
                 return;
             }
         }
+        // Проверяем, что есть хотя бы одно значимое поле для POST
+        const hasData = Object.values(rowData).some(v => v !== null && v !== '' && v !== undefined);
+        if(!hasData) return; // Не создаём пустые записи
+        
         const created = await postJson(`${base}/`, rowData);
         if(created && created.id){
             tr.dataset.id = String(created.id);
