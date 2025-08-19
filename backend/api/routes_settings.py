@@ -12,7 +12,7 @@ DELETE /api/settings/{id}     – удалить
 В будущем можно расширить фильтрацию (по key), но для MVP хватит базового CRUD.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,9 @@ from backend.api.schemas import (
     SettingRead,
     SettingUpdate,
 )
+
+from typing import Optional
+import json
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 

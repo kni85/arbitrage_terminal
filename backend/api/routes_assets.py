@@ -80,9 +80,15 @@ async def update_asset_partial(asset_id: int, payload: AssetUpdate, session: Asy
     data = payload.model_dump(exclude_unset=True)
     for field, value in data.items():
         setattr(asset, field, value)
-    await session.commit()
-    await session.refresh(asset)
-    return asset
+    try:
+        await session.commit()
+        await session.refresh(asset)
+        return asset
+    except Exception as e:
+        await session.rollback()
+        if "UNIQUE constraint failed" in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Asset with this code already exists")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -81,9 +81,15 @@ async def update_account_partial(acc_id: int, payload: AccountUpdate, session: A
     data = payload.model_dump(exclude_unset=True)
     for field, value in data.items():
         setattr(acc, field, value)
-    await session.commit()
-    await session.refresh(acc)
-    return acc
+    try:
+        await session.commit()
+        await session.refresh(acc)
+        return acc
+    except Exception as e:
+        await session.rollback()
+        if "UNIQUE constraint failed" in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account with this alias already exists")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.delete("/{acc_id}", status_code=status.HTTP_204_NO_CONTENT)

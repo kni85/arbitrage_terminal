@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '20250818_allow_nulls'
+revision = '20250818_allow_null_drafts'
 down_revision = 'e8dfed7a75d4'
 branch_labels = None
 depends_on = None

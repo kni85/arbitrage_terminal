@@ -1384,23 +1384,39 @@ function extractRowDataFromTr(tableType, tr){
     if(tableType==='assets'){
         const c = tr.cells;
         const payload = {
-            code: (c[0]?.textContent||'').trim()||undefined,
-            name: (c[1]?.textContent||'').trim()||undefined,
-            class_code: (c[2]?.textContent||'').trim()||undefined,
-            sec_code: (c[3]?.textContent||'').trim()||undefined,
-            price_step: (c[4] && c[4].textContent!==''? parseFloat(c[4].textContent): undefined),
+            code: (c[0]?.textContent||'').trim() || null,
+            name: (c[1]?.textContent||'').trim() || null,
+            class_code: (c[2]?.textContent||'').trim() || null,
+            sec_code: (c[3]?.textContent||'').trim() || null,
+            price_step: (c[4] && c[4].textContent!==''? parseFloat(c[4].textContent): null),
         };
-        const clean={}; Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined) clean[k]=v; });
+        // Для UNIQUE полей (code) - если null, то не отправляем вообще
+        const clean={};
+        Object.entries(payload).forEach(([k,v])=>{ 
+            if(k==='code' && v===null && !tr.dataset.id) {
+                // Для новых записей без id не отправляем пустой code
+                return;
+            }
+            clean[k]=v; 
+        });
         return clean;
     }
     if(tableType==='accounts'){
         const c = tr.cells;
         const payload = {
-            alias: (c[0]?.textContent||'').trim()||undefined,
-            account_number: (c[2]?.textContent||'').trim()||undefined,
-            client_code: (c[3]?.textContent||'').trim()||undefined,
+            alias: (c[0]?.textContent||'').trim() || null,
+            account_number: (c[2]?.textContent||'').trim() || null,
+            client_code: (c[3]?.textContent||'').trim() || null,
         };
-        const clean={}; Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined) clean[k]=v; });
+        // Для UNIQUE полей (alias) - если null, то не отправляем вообще для новых записей
+        const clean={};
+        Object.entries(payload).forEach(([k,v])=>{ 
+            if(k==='alias' && v===null && !tr.dataset.id) {
+                // Для новых записей без id не отправляем пустой alias
+                return;
+            }
+            clean[k]=v; 
+        });
         return clean;
     }
     if(tableType==='pairs'){
