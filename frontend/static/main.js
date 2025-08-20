@@ -491,6 +491,239 @@ function closeRowWs(row){
     }
 }
 
+// Asset autocomplete functionality
+function setupAssetAutocomplete(cell) {
+    let dropdown = null;
+    let selectedIndex = -1;
+    
+    // Get available asset codes from assets_table
+    function getAssetCodes() {
+        const codes = [];
+        
+        // Try in-memory cache first
+        if (window._assetIdMap) {
+            Object.keys(window._assetIdMap).forEach(code => {
+                if (code && code.trim()) codes.push(code.trim());
+            });
+        } else {
+            // Fallback to localStorage
+            try {
+                const data = localStorage.getItem('assets_table');
+                if (data) {
+                    const assets = JSON.parse(data);
+                    assets.forEach(asset => {
+                        if (asset.code && asset.code.trim()) {
+                            codes.push(asset.code.trim());
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('Error loading asset codes:', e);
+            }
+        }
+        
+        return codes.sort(); // Sort alphabetically
+    }
+    
+    // Create dropdown
+    function createDropdown(filteredCodes) {
+        if (dropdown) {
+            dropdown.remove();
+        }
+        
+        if (filteredCodes.length === 0) return;
+        
+        dropdown = document.createElement('div');
+        dropdown.className = 'asset-autocomplete-dropdown';
+        dropdown.style.cssText = `
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            min-width: 120px;
+        `;
+        
+        filteredCodes.forEach((code, index) => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = code;
+            item.style.cssText = `
+                padding: 8px 12px;
+                cursor: pointer;
+                border-bottom: 1px solid #eee;
+                background: ${index === selectedIndex ? '#e3f2fd' : 'white'};
+            `;
+            
+            item.addEventListener('mouseenter', () => {
+                selectedIndex = index;
+                updateSelection();
+            });
+            
+            item.addEventListener('click', () => {
+                selectAsset(code);
+            });
+            
+            dropdown.appendChild(item);
+        });
+        
+        // Position dropdown
+        const rect = cell.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+        dropdown.style.left = (rect.left + window.scrollX) + 'px';
+        
+        document.body.appendChild(dropdown);
+    }
+    
+    // Update selection highlighting
+    function updateSelection() {
+        if (!dropdown) return;
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        items.forEach((item, index) => {
+            item.style.background = index === selectedIndex ? '#e3f2fd' : 'white';
+        });
+    }
+    
+    // Select asset and validate
+    function selectAsset(code) {
+        cell.textContent = code;
+        cell.dataset.value = code;
+        hideDropdown();
+        
+        // Validate asset code
+        validateAssetCode(cell, code);
+        
+        // Save table and trigger other updates
+        const row = cell.closest('tr');
+        if (row) {
+            savePairsTable();
+            updateHitPrice(row);
+            updateLeaves(row);
+            checkRowForTrade(row);
+        }
+    }
+    
+    // Hide dropdown
+    function hideDropdown() {
+        if (dropdown) {
+            dropdown.remove();
+            dropdown = null;
+        }
+        selectedIndex = -1;
+    }
+    
+    // Validate asset code and show error if invalid
+    function validateAssetCode(cell, code) {
+        const row = cell.closest('tr');
+        if (!row) return;
+        
+        const errorCell = cellById(row, 'error');
+        if (!errorCell) return;
+        
+        if (!code || !code.trim()) {
+            return; // Empty is OK
+        }
+        
+        const trimmedCode = code.trim();
+        const assetExists = lookupClassSec(trimmedCode) !== null;
+        
+        if (!assetExists) {
+            errorCell.textContent = `Invalid asset code: ${trimmedCode}`;
+            cell.style.borderColor = '#ff4444';
+        } else {
+            // Clear error if this was the only error
+            const currentError = errorCell.textContent;
+            if (currentError.includes(`Invalid asset code: ${trimmedCode}`)) {
+                errorCell.textContent = '';
+            }
+            cell.style.borderColor = '';
+        }
+    }
+    
+    // Event listeners
+    cell.addEventListener('input', (e) => {
+        const value = cell.textContent.trim();
+        const allCodes = getAssetCodes();
+        const filteredCodes = allCodes.filter(code => 
+            code.toLowerCase().includes(value.toLowerCase())
+        );
+        
+        selectedIndex = -1;
+        createDropdown(filteredCodes);
+    });
+    
+    cell.addEventListener('keydown', (e) => {
+        if (!dropdown) return;
+        
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelection();
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelection();
+                break;
+                
+            case 'Enter':
+                e.preventDefault();
+                if (selectedIndex >= 0 && items[selectedIndex]) {
+                    selectAsset(items[selectedIndex].textContent);
+                } else {
+                    // Validate current input
+                    const currentValue = cell.textContent.trim();
+                    validateAssetCode(cell, currentValue);
+                    hideDropdown();
+                    
+                    // Trigger normal Enter behavior
+                    const newVal = cell.textContent.trim();
+                    cell.dataset.value = newVal;
+                    const row = cell.closest('tr');
+                    if (row) {
+                        savePairsTable();
+                        updateHitPrice(row);
+                        updateLeaves(row);
+                        checkRowForTrade(row);
+                    }
+                }
+                break;
+                
+            case 'Escape':
+                e.preventDefault();
+                hideDropdown();
+                break;
+        }
+    });
+    
+    cell.addEventListener('blur', (e) => {
+        // Delay hiding to allow click on dropdown
+        setTimeout(() => {
+            const currentValue = cell.textContent.trim();
+            validateAssetCode(cell, currentValue);
+            hideDropdown();
+        }, 200);
+    });
+    
+    cell.addEventListener('focus', () => {
+        const value = cell.textContent.trim();
+        if (value) {
+            const allCodes = getAssetCodes();
+            const filteredCodes = allCodes.filter(code => 
+                code.toLowerCase().includes(value.toLowerCase())
+            );
+            createDropdown(filteredCodes);
+        }
+    });
+}
+
 // -------------------- Add row helper --------------------
 function addPairsRow(data){
     const row = pairsTbody.insertRow(-1);
@@ -501,14 +734,22 @@ function addPairsRow(data){
     const makeEditable = (value='')=>{ const td=document.createElement('td'); td.contentEditable='true'; td.textContent=value; return td; };
     const makeReadonly = (value='')=>{ const td=document.createElement('td'); td.textContent=value; return td; };
     const makeSelect = (val)=>{ const td=document.createElement('td'); const s=document.createElement('select'); s.innerHTML='<option value="BUY">BUY</option><option value="SELL">SELL</option>'; s.value=val; td.appendChild(s); return [td,s]; };
+    const makeAssetAutocomplete = (value='')=>{ 
+        const td = document.createElement('td'); 
+        td.contentEditable = 'true'; 
+        td.textContent = value; 
+        td.classList.add('asset-autocomplete');
+        setupAssetAutocomplete(td);
+        return td; 
+    };
 
     let sel1, sel2, cb;
 
     order.forEach((colId, idx)=>{
         let td;
         switch(colId){
-            case 'asset_1': td = makeEditable(data?data[0]:''); break;
-            case 'asset_2': td = makeEditable(data?data[1]:''); break;
+            case 'asset_1': td = makeAssetAutocomplete(data?data[0]:''); break;
+            case 'asset_2': td = makeAssetAutocomplete(data?data[1]:''); break;
             case 'account_1': td = makeEditable(data?data[2]:''); break;
             case 'account_2': td = makeEditable(data?data[3]:''); break;
             case 'side_1': [td,sel1] = makeSelect(data? (data[4] || 'BUY') :'BUY'); break;
