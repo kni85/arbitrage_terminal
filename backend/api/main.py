@@ -20,6 +20,7 @@ from backend.api.routes_assets import router as assets_router
 from backend.api.routes_pairs import router as pairs_router
 from backend.api.routes_columns import router as columns_router
 from backend.api.routes_settings import router as settings_router
+from backend.api.routes_trades import router as trades_router
 from db.database import ensure_tables_exist
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ app.include_router(assets_router)
 app.include_router(pairs_router)
 app.include_router(columns_router)
 app.include_router(settings_router)
+app.include_router(trades_router)
 
 
 # --- events ---------------------------------------------------------------

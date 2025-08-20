@@ -166,19 +166,18 @@ const handleWsOrderMessage = (ev) => {
         if(!row) return;
         row._inFlight=false;
         if(ok){
-            // обновляем exec_qty
-            const execQtyCell = cellById(row,'exec_qty');
-            const prevQty = parseInt(execQtyCell.textContent)||0;
-            const newQty = prevQty+1;
-            execQtyCell.textContent = newQty.toString();
-            // exec_price (среднее) – используем текущий hit_price
-            const hit = parseFloat(cellById(row,'hit_price').textContent)||0;
-            const execPriceCell = cellById(row,'exec_price');
-            const prevPrice = parseFloat(execPriceCell.textContent)||0;
-            const newPrice = prevQty===0? hit : ((prevPrice*prevQty + hit)/newQty);
-            execPriceCell.textContent = newPrice ? newPrice.toFixed(4): '';
-            // пересчёт leaves_qty
-            updateLeaves(row);
+            // Обновляем статистику из базы данных реальных сделок
+            const pairId = row.dataset.id;
+            if(pairId) {
+                updatePairStatsFromDB(row, parseInt(pairId, 10));
+            } else {
+                // Fallback: старая логика для строк без ID
+                const execQtyCell = cellById(row,'exec_qty');
+                const prevQty = parseInt(execQtyCell.textContent)||0;
+                const newQty = prevQty+1;
+                execQtyCell.textContent = newQty.toString();
+                updateLeaves(row);
+            }
             // auto-stop
             const leaves = parseInt(cellById(row,'leaves_qty').textContent)||0;
             if(leaves<=0){
@@ -435,6 +434,78 @@ function updateHitPrice(row){
     cellById(row,'hit_price').textContent = hit ? hit.toFixed(2): '';
 }
 
+// Обновляет exec_price и exec_qty из базы данных реальных сделок
+async function updatePairStatsFromDB(row, pairId) {
+    try {
+        const stats = await fetchJson(`${API_BASE}/pairs/${pairId}/stats`);
+        
+        // Обновляем exec_price
+        const execPriceCell = cellById(row, 'exec_price');
+        if (stats.exec_price !== null) {
+            execPriceCell.textContent = stats.exec_price.toFixed(4);
+        } else {
+            execPriceCell.textContent = '';
+        }
+        
+        // Обновляем exec_qty
+        const execQtyCell = cellById(row, 'exec_qty');
+        execQtyCell.textContent = stats.exec_qty.toString();
+        
+        // Пересчитываем leaves_qty
+        updateLeaves(row);
+        
+        if(DEBUG_API) {
+            console.log(`[TRADE STATS] pair_id=${pairId}:`, stats);
+        }
+    } catch (error) {
+        console.error('Failed to update pair stats from DB:', error);
+        // Fallback: увеличиваем exec_qty на 1
+        const execQtyCell = cellById(row, 'exec_qty');
+        const prevQty = parseInt(execQtyCell.textContent) || 0;
+        execQtyCell.textContent = (prevQty + 1).toString();
+        updateLeaves(row);
+    }
+}
+
+// Очищает лог сделок и сбрасывает exec_price/exec_qty для пары
+async function resetPairTrades(row) {
+    const pairId = row.dataset.id;
+    
+    if (!pairId) {
+        // Fallback: старая логика для строк без ID
+        cellById(row, 'exec_price').textContent = '';
+        cellById(row, 'exec_qty').textContent = '0';
+        cellById(row, 'error').textContent = '';
+        updateLeaves(row);
+        savePairsTable();
+        return;
+    }
+    
+    try {
+        const result = await deleteJson(`${API_BASE}/pairs/${pairId}/trades`);
+        
+        // Обновляем GUI
+        cellById(row, 'exec_price').textContent = '';
+        cellById(row, 'exec_qty').textContent = '0';
+        cellById(row, 'error').textContent = '';
+        updateLeaves(row);
+        savePairsTable();
+        
+        if(DEBUG_API) {
+            console.log(`[RESET] Cleared ${result.deleted_count} trades for pair_id=${pairId}`);
+        }
+        
+        // Показываем уведомление пользователю
+        if (result.deleted_count > 0) {
+            alert(`Очищено ${result.deleted_count} сделок для стратегии "${cellById(row, 'strategy_name').textContent}"`);
+        }
+        
+    } catch (error) {
+        console.error('Failed to reset pair trades:', error);
+        alert('Ошибка при сбросе сделок. Попробуйте позже.');
+    }
+}
+
 // ----- Utilities ---------------------------------------
 
 function lookupClassSec(systemCode){
@@ -533,7 +604,9 @@ function addPairsRow(data){
             case 'reset':
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
-                btn.addEventListener('click', ()=>{ cellById(row,'exec_price').textContent=''; cellById(row,'exec_qty').textContent='0'; updateLeaves(row); savePairsTable(); });
+                btn.addEventListener('click', async ()=>{ 
+                    await resetPairTrades(row);
+                });
                 break;
             case 'started':
                 td = document.createElement('td');
@@ -683,6 +756,7 @@ function sendPairOrder(row){
     const payload = {
         action:'send_pair_order',
         row_id: Array.from(pairsTbody.rows).indexOf(row),
+        pair_id: row.dataset.id ? parseInt(row.dataset.id, 10) : null, // Для логирования реальных сделок
         class_code_1: cfg1.classcode, sec_code_1: cfg1.seccode,
         class_code_2: cfg2.classcode, sec_code_2: cfg2.seccode,
         side_1 : cellById(row,'side_1').querySelector('select').value,

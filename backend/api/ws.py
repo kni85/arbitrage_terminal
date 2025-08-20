@@ -75,7 +75,8 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
                     actions.stop_quotes(*current_sub, quote_callback, broker=broker)
                     current_sub = None
             elif action == "send_pair_order":
-                ok, msg_text = await actions.send_pair_order(msg, broker=broker)
+                pair_id = msg.get("pair_id")  # Получаем pair_id для логирования сделок
+                ok, msg_text = await actions.send_pair_order(msg, pair_id=pair_id, broker=broker)
                 await send_json_safe({"type": "pair_order_reply", "row_id": msg.get("row_id"), "ok": ok, "message": msg_text})
             elif action == "send_order":
                 resp = await actions.send_order(msg, broker=broker)
