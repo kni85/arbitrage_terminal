@@ -384,9 +384,9 @@ document.getElementById('menu_del').onclick = ()=>{
      accountsTbody.innerHTML='';
      rows.forEach(item=>{
          const row = accountsTbody.insertRow(-1);
-         const cells = Array.isArray(item)
-             ? item
-             : [item.alias||'', '', item.account_number||'', item.client_code||''];
+                 const cells = Array.isArray(item)
+            ? item
+            : [item.alias||'', item.broker||'', item.account_number||'', item.client_code||''];
          if(item && item.id) row.dataset.id = String(item.id);
          cells.forEach(cellText=>{
              const cell = row.insertCell(-1);
@@ -1089,6 +1089,7 @@ function saveAccountsTable(){
     const rows = Array.from(accountsTbody.rows).map(tr=>({
         id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null,
         alias: (tr.cells[0]?.textContent||'').trim()||'',
+        broker: (tr.cells[1]?.textContent||'').trim()||'',  // Добавлено поле broker (колонка 1)
         account_number: (tr.cells[2]?.textContent||'').trim()||'',
         client_code: (tr.cells[3]?.textContent||'').trim()||'',
     }));
@@ -1412,6 +1413,7 @@ function extractRowDataFromTr(tableType, tr){
         const c = tr.cells;
         const payload = {
             alias: (c[0]?.textContent||'').trim() || null,
+            broker: (c[1]?.textContent||'').trim() || null,  // Добавлено поле broker (колонка 1)
             account_number: (c[2]?.textContent||'').trim() || null,
             client_code: (c[3]?.textContent||'').trim() || null,
         };

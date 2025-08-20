@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 class AccountBase(BaseModel):
     # Разрешаем пустые значения для черновиков -> Optional[str]
     alias: Optional[str] = Field(None, max_length=64)
+    broker: Optional[str] = Field(None, max_length=64)  # Добавлено поле broker
     account_number: Optional[str] = Field(None, max_length=32)
     client_code: Optional[str] = Field(None, max_length=32)
 
@@ -31,6 +32,7 @@ class AccountBase(BaseModel):
 class AccountCreate(BaseModel):
     # Все поля опциональны — разрешаем пустые/частичные строки
     alias: Optional[str] = Field(None, max_length=64)
+    broker: Optional[str] = Field(None, max_length=64)  # Добавлено поле broker
     account_number: Optional[str] = Field(None, max_length=32)
     client_code: Optional[str] = Field(None, max_length=32)
 
@@ -42,6 +44,7 @@ class AccountRead(AccountBase):
 
 class AccountUpdate(BaseModel):
     alias: Optional[str] = Field(None, max_length=64)
+    broker: Optional[str] = Field(None, max_length=64)  # Добавлено поле broker
     account_number: Optional[str] = Field(None, max_length=32)
     client_code: Optional[str] = Field(None, max_length=32)
 

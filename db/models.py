@@ -60,6 +60,7 @@ class Account(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # Разрешаем NULL для поддержки черновиков строк
     alias: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    broker: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Добавлено поле broker
     account_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     client_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
