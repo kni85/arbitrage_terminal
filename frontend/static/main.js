@@ -1244,11 +1244,11 @@ async function syncPairs(rows){
     // Получаем список пар с сервера один раз – строим карту "asset1|asset2" -> {id, updated_at}
     let serverPairs = [];
     try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
-    const map = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
+    const map = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}|${p.strategy_name}`, p]));
     window._pairsIdMap = map; // для последующих шагов (ERR-2.2)
 
     // --- DELETE pairs that were removed on UI ---
-    const uiKeys = new Set(rows.map(r=>`${r[0]?.trim()}|${r[1]?.trim()}`));
+    const uiKeys = new Set(rows.map(r=>`${r[0]?.trim()}|${r[1]?.trim()}|${r[15]?.trim()}`)); // r[15] = strategy_name
     for(const [k,p] of Object.entries(map)){
         if(!uiKeys.has(k)){
             await deleteJson(`${API_BASE}/pairs/${p.id}`);
@@ -1261,7 +1261,8 @@ async function syncPairs(rows){
         const a1 = r[0]?.trim();
         const a2 = r[1]?.trim();
         if(!a1||!a2) continue;
-        const key = `${a1}|${a2}`;
+        const sname = r[15]?.trim(); // strategy_name
+        const key = `${a1}|${a2}|${sname}`;
         const payload = {
             asset_1: a1,
             asset_2: a2,
@@ -1373,7 +1374,7 @@ async function ensureRowPersisted(tableType, tr){
                 if(created.alias){ window._accountIdMap[created.alias] = created; }
             } else if(tableType==='pairs'){
                 window._pairsIdMap = window._pairsIdMap||{};
-                const key = `${created.asset_1||''}|${created.asset_2||''}`;
+                const key = `${created.asset_1||''}|${created.asset_2||''}|${created.strategy_name||''}`;
                 window._pairsIdMap[key] = created;
             }
         }
