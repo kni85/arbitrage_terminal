@@ -132,7 +132,7 @@ class QuikConnector:
     # -----------------------------------------------------------------------
     # Публичные методы для подписок
     # -----------------------------------------------------------------------
-    def subscribe_quotes(self, class_code: str, sec_code: str) -> None:
+    def subscribe_quotes(self, class_code: str, sec_code: str, callback: QuoteCallback = None) -> None:
         """Подписка на котировки L2."""
         key = (class_code, sec_code)
         if key in self._subscribed_quotes:
@@ -140,13 +140,17 @@ class QuikConnector:
             return
 
         try:
+            # Устанавливаем callback если передан
+            if callback:
+                self._qp.on_quote = callback
+            
             self._qp.subscribe_level2_quotes(class_code, sec_code)
             self._subscribed_quotes.add(key)
             logger.info("Subscribed to quotes: %s %s", class_code, sec_code)
         except Exception as exc:
             logger.exception("Failed to subscribe to quotes %s %s: %s", class_code, sec_code, exc)
 
-    def unsubscribe_quotes(self, class_code: str, sec_code: str) -> None:
+    def unsubscribe_quotes(self, class_code: str, sec_code: str, callback: QuoteCallback = None) -> None:
         """Отписка от котировок L2."""
         key = (class_code, sec_code)
         if key not in self._subscribed_quotes:
