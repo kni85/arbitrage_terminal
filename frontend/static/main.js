@@ -491,8 +491,69 @@ function closeRowWs(row){
     }
 }
 
-// Asset autocomplete functionality
-function setupAssetAutocomplete(cell) {
+// Asset autocomplete functionality (fixed version below)
+
+// Validate all asset codes in a row and clear validation errors
+function validateAllAssetsInRow(row) {
+    const asset1Cell = cellById(row, 'asset_1');
+    const asset2Cell = cellById(row, 'asset_2');
+    const errorCell = cellById(row, 'error');
+    
+    if (!errorCell) return;
+    
+    let hasErrors = false;
+    
+    // Clear existing asset validation errors
+    const currentError = errorCell.textContent;
+    let cleanedError = currentError;
+    
+    console.log('validateAllAssetsInRow - before:', {
+        asset1: asset1Cell ? asset1Cell.textContent : 'null',
+        asset2: asset2Cell ? asset2Cell.textContent : 'null',
+        currentError: currentError
+    });
+    
+    // Remove any "Invalid asset code:" messages
+    cleanedError = cleanedError.replace(/Invalid asset code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
+    cleanedError = cleanedError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up leading/trailing separators
+    
+    // Validate asset_1
+    if (asset1Cell) {
+        const code1 = asset1Cell.textContent.trim();
+        if (code1 && !lookupClassSec(code1)) {
+            const errorMsg = `Invalid asset code: ${code1}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            asset1Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
+        } else {
+            asset1Cell.style.borderColor = '';
+        }
+    }
+    
+    // Validate asset_2
+    if (asset2Cell) {
+        const code2 = asset2Cell.textContent.trim();
+        if (code2 && !lookupClassSec(code2)) {
+            const errorMsg = `Invalid asset code: ${code2}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            asset2Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
+        } else {
+            asset2Cell.style.borderColor = '';
+        }
+    }
+    
+    errorCell.textContent = cleanedError;
+    
+    console.log('validateAllAssetsInRow - after:', {
+        cleanedError: cleanedError,
+        hasErrors: hasErrors,
+        finalErrorText: errorCell.textContent
+    });
+}
+
+// Complete the setupAssetAutocomplete function that was broken
+function completeSetupAssetAutocomplete(cell) {
     let dropdown = null;
     let selectedIndex = -1;
     
@@ -623,53 +684,6 @@ function setupAssetAutocomplete(cell) {
         // Use the global validation function for consistency
         validateAllAssetsInRow(row);
     }
-}
-
-// Validate all asset codes in a row and clear validation errors
-function validateAllAssetsInRow(row) {
-    const asset1Cell = cellById(row, 'asset_1');
-    const asset2Cell = cellById(row, 'asset_2');
-    const errorCell = cellById(row, 'error');
-    
-    if (!errorCell) return;
-    
-    let hasErrors = false;
-    
-    // Clear existing asset validation errors
-    const currentError = errorCell.textContent;
-    let cleanedError = currentError;
-    
-    // Remove any "Invalid asset code:" messages
-    cleanedError = cleanedError.replace(/Invalid asset code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
-    cleanedError = cleanedError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up leading/trailing separators
-    
-    // Validate asset_1
-    if (asset1Cell) {
-        const code1 = asset1Cell.textContent.trim();
-        if (code1 && !lookupClassSec(code1)) {
-            const errorMsg = `Invalid asset code: ${code1}`;
-            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
-            asset1Cell.style.borderColor = '#ff4444';
-            hasErrors = true;
-        } else {
-            asset1Cell.style.borderColor = '';
-        }
-    }
-    
-    // Validate asset_2
-    if (asset2Cell) {
-        const code2 = asset2Cell.textContent.trim();
-        if (code2 && !lookupClassSec(code2)) {
-            const errorMsg = `Invalid asset code: ${code2}`;
-            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
-            asset2Cell.style.borderColor = '#ff4444';
-            hasErrors = true;
-        } else {
-            asset2Cell.style.borderColor = '';
-        }
-    }
-    
-    errorCell.textContent = cleanedError;
     
     // Event listeners
     cell.addEventListener('input', (e) => {
@@ -767,7 +781,7 @@ function addPairsRow(data){
         td.contentEditable = 'true'; 
         td.textContent = value; 
         td.classList.add('asset-autocomplete');
-        setupAssetAutocomplete(td);
+        completeSetupAssetAutocomplete(td);
         return td; 
     };
 
@@ -803,12 +817,30 @@ function addPairsRow(data){
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
                 btn.addEventListener('click', ()=>{ 
+                    console.log('Reset clicked - before changes:', {
+                        exec_price: cellById(row,'exec_price').textContent,
+                        exec_qty: cellById(row,'exec_qty').textContent,
+                        error: cellById(row,'error').textContent
+                    });
+                    
                     cellById(row,'exec_price').textContent=''; 
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
                     validateAllAssetsInRow(row); 
+                    
+                    console.log('Reset clicked - after validation:', {
+                        exec_price: cellById(row,'exec_price').textContent,
+                        exec_qty: cellById(row,'exec_qty').textContent,
+                        error: cellById(row,'error').textContent
+                    });
+                    
                     // Важно: сохранить изменения в БД после обновления DOM
-                    setTimeout(() => savePairsTable(), 10); 
+                    setTimeout(() => {
+                        console.log('Reset - saving to DB:', {
+                            error: cellById(row,'error').textContent
+                        });
+                        savePairsTable();
+                    }, 10); 
                 });
                 break;
             case 'started':
@@ -907,7 +939,12 @@ function restorePairsTable(){
     let rows;
     try { rows = JSON.parse(data); } catch (e) { console.error(e); return; }
     pairsTbody.innerHTML='';
-    rows.forEach(item=>{
+    
+    console.log('restorePairsTable - restoring rows:', rows);
+    
+    rows.forEach((item, index) => {
+        console.log(`restorePairsTable - processing item ${index}:`, item);
+        
         if(Array.isArray(item)){
             addPairsRow(item);
         } else if(item && typeof item==='object'){
@@ -918,7 +955,10 @@ function restorePairsTable(){
                 String(item.price_1??''), String(item.price_2??''), String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
             ];
             const r = addPairsRow(arr);
-            if(item.id) r.dataset.id = String(item.id);
+            if(item.id) {
+                r.dataset.id = String(item.id);
+                console.log(`restorePairsTable - set row.dataset.id = ${item.id} for assets ${item.asset_1}/${item.asset_2}`);
+            }
         }
     });
     // после восстановления данных восстановим ширины столбцов
