@@ -44,8 +44,6 @@ class OrderManager:
         self._orm_to_quik: Dict[int, int] = {}
         # Новый маппинг: trans_id -> orm_order_id
         self._trans_to_orm: Dict[Any, int] = {}
-        # Маппинг для парных ордеров: trans_id -> pair_id
-        self._trans_to_pair: Dict[int, int] = {}
         # Сохраняем CLASSCODE & SECCODE для каждого ORM-ордера
         self._orm_to_contract: Dict[int, tuple[str, str]] = {}
         # Сохраняем ACCOUNT для каждой заявки (нужно для MOVE_ORDERS)
@@ -81,10 +79,6 @@ class OrderManager:
             return
         self._trans_to_orm[trans_id] = orm_order_id
         self._trans_to_orm[str(trans_id)] = orm_order_id
-
-    def _register_pair_mapping(self, trans_id: int, pair_id: int):
-        """Регистрирует связку trans_id -> pair_id для парных ордеров."""
-        self._trans_to_pair[trans_id] = pair_id
 
     def _register_quik_mapping(self, quik_num: Any, orm_order_id: int):
         """Сохраняет привязку quik_num → orm_order_id для int и str форматов."""
@@ -385,8 +379,7 @@ class OrderManager:
 
     def on_trade_event(self, event: dict):
         """
-        Обрабатывает событие реальной сделки от QUIK.
-        Обновляет Order и создает запись Trade для пар.
+        Ищем по QUIK_ID, если нет — по trans_id.
         """
         quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
         trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
@@ -395,46 +388,21 @@ class OrderManager:
             orm_order_id = self._quik_to_orm[quik_num]
         elif trans_id is not None and trans_id in self._trans_to_orm:
             orm_order_id = self._trans_to_orm[trans_id]
-        
         if orm_order_id is None:
             logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
-
-        # Проверяем, есть ли связь с парой
-        pair_id = None
-        if trans_id is not None and trans_id in self._trans_to_pair:
-            pair_id = self._trans_to_pair[trans_id]
-
         async def update():
-            from db.models import Trade  # Import here to avoid circular imports
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
                 if order:
                     qty = event.get("qty") or 0
-                    price = event.get("price") or 0.0
-                    side = event.get("operation") or ("BUY" if order.side == Side.LONG else "SELL")
-                    
-                    # Обновляем Order
                     order.filled = (order.filled or 0) + qty
                     order.leaves_qty = max(order.qty - order.filled, 0)
+                    # PARTIAL или FILLED
                     if order.filled >= order.qty:
                         order.status = OrderStatus.FILLED
                     else:
                         order.status = OrderStatus.PARTIAL
-                    
-                    # Если это парный ордер - создаем запись Trade
-                    if pair_id:
-                        trade = Trade(
-                            pair_id=pair_id,
-                            side=side,
-                            qty=qty,
-                            price=price,
-                            quik_trade_id=str(event.get("trade_num", "")),
-                            asset_code=event.get("sec_code", ""),
-                        )
-                        session.add(trade)
-                        logger.info(f"[TRADE] Создана запись Trade для pair_id={pair_id}: {side} {qty}@{price}")
-                    
                     await session.commit()
                     logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, leaves_qty={order.leaves_qty}, status={order.status}")
         self._schedule(update())

@@ -77,7 +77,7 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
 # Отправка парного ордера (арбитраж)
 # ---------------------------------------------------------------------------
 
-async def send_pair_order(data: Dict[str, Any], pair_id: int | None = None, broker: Broker | None = None) -> Tuple[bool, str]:  # noqa: D401
+async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) -> Tuple[bool, str]:  # noqa: D401
     """Отправляет два синхронных рыночных ордера (парный арбитраж)."""
     try:
         class_code_1, sec_code_1 = data["class_code_1"], data["sec_code_1"]
@@ -98,10 +98,6 @@ async def send_pair_order(data: Dict[str, Any], pair_id: int | None = None, brok
             om = container.order_manager()
             om._register_trans_mapping(trans1, -1)
             om._register_trans_mapping(trans2, -1)
-            # Если передан pair_id, регистрируем связь для логирования реальных сделок
-            if pair_id:
-                om._register_pair_mapping(trans1, pair_id)
-                om._register_pair_mapping(trans2, pair_id)
         except Exception:
             pass
         order1 = {

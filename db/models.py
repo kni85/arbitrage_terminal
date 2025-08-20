@@ -10,7 +10,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import List
 
 from sqlalchemy import (
     Column,
@@ -138,9 +137,6 @@ class Pair(Base):
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Связь с сделками
-    trades: Mapped[List["Trade"]] = relationship("Trade", back_populates="pair", cascade="all, delete-orphan")
-
     def __repr__(self) -> str:  # noqa: D401
         return f"<Pair {self.asset_1}/{self.asset_2} id={self.id}>"
 
@@ -159,31 +155,6 @@ class PairsColumn(Base):
 
     def __repr__(self) -> str:  # noqa: D401
         return f"<PairsColumn {self.name} pos={self.position} w={self.width}>"
-
-
-class Trade(Base):
-    """Лог реальных сделок для расчёта exec_price по фактическим исполнениям."""
-
-    __tablename__ = "trades"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    pair_id: Mapped[int] = mapped_column(Integer, ForeignKey("pairs_table.id"), nullable=False)
-    
-    # Данные сделки
-    side: Mapped[str] = mapped_column(String(4), nullable=False)  # 'BUY' или 'SELL'
-    qty: Mapped[int] = mapped_column(Integer, nullable=False)     # Количество лотов
-    price: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)  # Цена исполнения
-    
-    # Метаданные
-    quik_trade_id: Mapped[str | None] = mapped_column(String(64))  # ID сделки в QUIK
-    asset_code: Mapped[str | None] = mapped_column(String(32))     # Какой актив (asset_1 или asset_2)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Связь с парой
-    pair: Mapped["Pair"] = relationship("Pair", back_populates="trades")
-
-    def __repr__(self) -> str:  # noqa: D401
-        return f"<Trade pair_id={self.pair_id} {self.side} {self.qty}@{self.price}>"
 
 
 class Setting(Base):
@@ -335,7 +306,24 @@ class Order(Base):
         return f"<Order {self.id}/{self.quik_num} {self.instrument.ticker} {self.side} {self.qty}@{self.price} {self.status}>"
 
 
+class Trade(Base):
+    __tablename__ = "trades"
+    __table_args__ = (
+        Index("ix_trades_inst_ts", "instrument_id", "ts"),
+    )
 
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    price: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # 'buy'/'sell'
+
+    instrument = relationship("Instrument")
+
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<Trade {self.instrument.ticker} {self.ts:%H:%M:%S} {self.side} {self.qty}@{self.price}>"
 
 
 if __name__ == "__main__":
