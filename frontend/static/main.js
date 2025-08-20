@@ -620,28 +620,56 @@ function setupAssetAutocomplete(cell) {
         const row = cell.closest('tr');
         if (!row) return;
         
-        const errorCell = cellById(row, 'error');
-        if (!errorCell) return;
-        
-        if (!code || !code.trim()) {
-            return; // Empty is OK
-        }
-        
-        const trimmedCode = code.trim();
-        const assetExists = lookupClassSec(trimmedCode) !== null;
-        
-        if (!assetExists) {
-            errorCell.textContent = `Invalid asset code: ${trimmedCode}`;
-            cell.style.borderColor = '#ff4444';
+        // Use the global validation function for consistency
+        validateAllAssetsInRow(row);
+    }
+}
+
+// Validate all asset codes in a row and clear validation errors
+function validateAllAssetsInRow(row) {
+    const asset1Cell = cellById(row, 'asset_1');
+    const asset2Cell = cellById(row, 'asset_2');
+    const errorCell = cellById(row, 'error');
+    
+    if (!errorCell) return;
+    
+    let hasErrors = false;
+    
+    // Clear existing asset validation errors
+    const currentError = errorCell.textContent;
+    let cleanedError = currentError;
+    
+    // Remove any "Invalid asset code:" messages
+    cleanedError = cleanedError.replace(/Invalid asset code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
+    cleanedError = cleanedError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up leading/trailing separators
+    
+    // Validate asset_1
+    if (asset1Cell) {
+        const code1 = asset1Cell.textContent.trim();
+        if (code1 && !lookupClassSec(code1)) {
+            const errorMsg = `Invalid asset code: ${code1}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            asset1Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
         } else {
-            // Clear error if this was the only error
-            const currentError = errorCell.textContent;
-            if (currentError.includes(`Invalid asset code: ${trimmedCode}`)) {
-                errorCell.textContent = '';
-            }
-            cell.style.borderColor = '';
+            asset1Cell.style.borderColor = '';
         }
     }
+    
+    // Validate asset_2
+    if (asset2Cell) {
+        const code2 = asset2Cell.textContent.trim();
+        if (code2 && !lookupClassSec(code2)) {
+            const errorMsg = `Invalid asset code: ${code2}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            asset2Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
+        } else {
+            asset2Cell.style.borderColor = '';
+        }
+    }
+    
+    errorCell.textContent = cleanedError;
     
     // Event listeners
     cell.addEventListener('input', (e) => {
@@ -774,7 +802,13 @@ function addPairsRow(data){
             case 'reset':
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
-                btn.addEventListener('click', ()=>{ cellById(row,'exec_price').textContent=''; cellById(row,'exec_qty').textContent='0'; updateLeaves(row); savePairsTable(); });
+                btn.addEventListener('click', ()=>{ 
+                    cellById(row,'exec_price').textContent=''; 
+                    cellById(row,'exec_qty').textContent='0'; 
+                    updateLeaves(row); 
+                    validateAllAssetsInRow(row); 
+                    savePairsTable(); 
+                });
                 break;
             case 'started':
                 td = document.createElement('td');
