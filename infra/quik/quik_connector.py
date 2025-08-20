@@ -10,6 +10,7 @@
 * Асинхронная очередь событий для стратегий (`await connector.events()`).
 * Методы выставления/отмены заявок (лимит / маркет).
 * Автоподстройка под разные имена методов `QuikPy` (camelCase vs snake_case).
+* Работает оф‑лайн через `DummyQuikPy` – полезно для разработки без терминала.
 
 Структура событий в очереди:
 ---------------------------
@@ -25,11 +26,97 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import Any, Callable, Dict, Optional
 
-from infra.quik.vendor.QuikPy import QuikPy  # type: ignore
-
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Импортируем QuikPy (или создаём заглушку)
+# ---------------------------------------------------------------------------
+try:
+    from infra.quik.vendor.QuikPy import QuikPy  # type: ignore
+except ImportError as exc:  # pragma: no cover – офлайн-режим
+    print(f"!!! ВНИМАНИЕ: QuikPy не найден ({exc}) — используется DummyQuikPy.")
+    logger.warning("QuikPy не найден (%s) — используется DummyQuikPy.", exc)
+
+    class QuikPy:  # type: ignore[override]
+        """Заглушка: только логирует вызовы."""
+
+        def __init__(
+            self,
+            host: str | None = None,
+            requests_port: int = 34130,
+            callbacks_port: int = 34131,
+        ) -> None:
+            self.host = host or "localhost"
+            self.requests_port = requests_port
+            self.callbacks_port = callbacks_port
+            logger.info(
+                "DummyQuikPy:init host=%s req_port=%s cb_port=%s",
+                self.host,
+                self.requests_port,
+                self.callbacks_port,
+            )
+
+        # --- Подписки ---------------------------------------------------
+        def subscribe_level2_quotes(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: subscribe L2 %s %s", class_code, sec_code)
+
+        def unsubscribe_level2_quotes(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: unsubscribe L2 %s %s", class_code, sec_code)
+
+        # --- Подписки на сделки (trades) ---
+        def subscribe_trades(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: subscribe trades %s %s", class_code, sec_code)
+
+        def unsubscribe_trades(self, class_code: str, sec_code: str):
+            logger.info("DummyQuikPy: unsubscribe trades %s %s", class_code, sec_code)
+
+        # --- Торговля ----------------------------------------------------
+        def send_transaction(self, tr: dict[str, Any]):
+            print(f"!!! DummyQuikPy: send_transaction {tr}")
+            logger.info("DummyQuikPy: send_transaction %s", tr)
+            
+            # Эмулируем исполнение сделки через небольшую задержку
+            import threading
+            import random
+            
+            def simulate_trade_execution():
+                """Эмулирует исполнение сделки от QUIK."""
+                try:
+                    # Эмулируем сделку
+                    trade_event = {
+                        "type": "trade",
+                        "order_num": random.randint(100000, 999999),  # Случайный номер ордера
+                        "trans_id": tr.get("TRANS_ID"),
+                        "qty": int(tr.get("QUANTITY", "1")),
+                        "price": round(random.uniform(250.0, 260.0), 2),  # Случайная цена для SBER
+                        "sec_code": tr.get("SECCODE"),
+                        "operation": tr.get("OPERATION"),
+                        "trade_num": random.randint(1000000, 9999999)
+                    }
+                    
+                    print(f"!!! DummyQuikPy: simulating trade {trade_event}")
+                    
+                    # Вызываем коллбэк on_trade если он установлен
+                    if hasattr(self, 'on_trade') and self.on_trade:
+                        self.on_trade(trade_event)
+                        
+                except Exception as e:
+                    print(f"Error in simulated trade callback: {e}")
+                    logger.error(f"Error in simulated trade callback: {e}")
+            
+            # Запускаем эмуляцию через 1-2 секунды
+            delay = random.uniform(1.0, 2.0)
+            timer = threading.Timer(delay, simulate_trade_execution)
+            timer.start()
+            
+            return {"result": 0, "message": "stub"}
+
+        # --- Завершение --------------------------------------------------
+        def close_connection_and_thread(self):
+            logger.info("DummyQuikPy: close connection")
 
 # ---------------------------------------------------------------------------
 QuoteCallback = Callable[[dict[str, Any]], None]
@@ -40,197 +127,208 @@ class QuikConnector:
     """Асинхронная обёртка над QuikPy (singleton)."""
 
     _instance: Optional["QuikConnector"] = None
+    _lock = threading.Lock()
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
+    def __new__(cls, *args: Any, **kwargs: Any):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
         return cls._instance
+
+    # ------------------------------------------------------------------
+    # Инициализация
+    # ------------------------------------------------------------------
 
     def __init__(
         self,
-        host: str = "localhost",
+        host: str | None = None,
         requests_port: int = 34130,
         callbacks_port: int = 34131,
-    ):
-        # Защита от повторной инициализации singleton
-        if hasattr(self, "_initialized"):
+    ) -> None:
+        if getattr(self, "_initialized", False):
             return
         self._initialized = True
 
-        self._host = host
-        self._requests_port = requests_port
-        self._callbacks_port = callbacks_port
+        host_real = host or "127.0.0.1"
+        # Пытаемся подключиться к реальному QuikPy; если соединение отказано –
+        # создаём Dummy-объект (работа офлайн).
+        try:
+            self._qp = QuikPy(
+                host=host_real,
+                requests_port=requests_port,
+                callbacks_port=callbacks_port,
+            )
+        except Exception as exc:  # pragma: no cover – QUIK off
+            logger.warning("QuikPy connection failed (%s) — switching to Dummy", exc)
+            self._qp = QuikPy()  # type: ignore  # Dummy class above
 
-        # Асинхронная очередь событий для стратегий
-        self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1000)
-
-        # Подключение к QuikPy
-        logger.info(
-            "Connecting to QuikPy: host=%s, req_port=%s, cb_port=%s",
-            self._host,
-            self._requests_port,
-            self._callbacks_port,
-        )
-        
-        self._qp = QuikPy(
-            host=self._host,
-            requests_port=self._requests_port,
-            callbacks_port=self._callbacks_port,
-        )
+        # Определяем, работаем ли мы в режиме заглушки (DummyQuikPy)
+        # Если класс QuikPy объявлен в этом же модуле, значит подключение не удалось
+        self._use_dummy_quotes: bool = self._qp.__class__.__module__ == __name__
 
         # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
         # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
         # сразу после их прихода из QUIK.
+        # Если пользователь уже настроил свои обработчики, их можно обернуть, но
+        # для текущей цели достаточно прямого назначения.
         self._qp.on_trade = self._on_trade  # type: ignore[attr-defined]
         self._qp.on_trans_reply = self._on_trans_reply  # type: ignore[attr-defined]
+        # Подписываемся на стакан L2 от реального QuikPy, если он доступен
+        self._qp.on_order = self._on_order  # type: ignore[attr-defined]
+        if hasattr(self._qp, "on_quote"):
+            self._qp.on_quote = self._on_quote  # type: ignore[attr-defined]
 
-        # Подписки на инструменты
-        self._subscribed_quotes: set[tuple[str, str]] = set()
-        self._subscribed_trades: set[tuple[str, str]] = set()
+        self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
+        self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
+        self._order_callbacks: Dict[str, list[OrderCallback]] = {}
+        self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
 
-        logger.info("QuikConnector initialized successfully")
+        # Запускаем поток-эмулятор котировок **только** если QuikPy не подключён
+        self._stop_quote_thread = threading.Event()
+        if self._use_dummy_quotes:
+            self._quote_thread = threading.Thread(
+                target=self._quote_listener_loop,
+                name="QP-quotes",
+                daemon=True,
+            )
+            self._quote_thread.start()
 
-    # -----------------------------------------------------------------------
-    # Callback-методы для QuikPy
-    # -----------------------------------------------------------------------
-    def _on_trade(self, trade_data: dict[str, Any]) -> None:
-        """Callback для событий сделок от QuikPy."""
-        try:
-            # Нормализуем событие и отправляем в очередь
-            event = {"type": "trade", **trade_data}
-            self._event_queue.put_nowait(event)
-            logger.debug("Trade event queued: %s", event)
-        except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping trade event")
-        except Exception as exc:
-            logger.exception("Error in _on_trade: %s", exc)
+        logger.info(
+            "QuikConnector initialised (host=%s, req_port=%s, cb_port=%s)",
+            host_real,
+            requests_port,
+            callbacks_port,
+        )
 
-    def _on_trans_reply(self, trans_reply: dict[str, Any]) -> None:
-        """Callback для ответов на транзакции от QuikPy."""
-        try:
-            # Нормализуем событие и отправляем в очередь
-            event = {"type": "trans_reply", **trans_reply}
-            self._event_queue.put_nowait(event)
-            logger.debug("Trans reply event queued: %s", event)
-        except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping trans reply event")
-        except Exception as exc:
-            logger.exception("Error in _on_trans_reply: %s", exc)
+    # ------------------------------------------------------------------
+    # Вспомогательные вызовы с fallback имён методов
+    # ------------------------------------------------------------------
 
-    def _on_quote(self, quote_data: dict[str, Any]) -> None:
-        """Callback для котировок от QuikPy."""
-        try:
-            # Нормализуем событие и отправляем в очередь
-            event = {"type": "quote", **quote_data}
-            self._event_queue.put_nowait(event)
-            logger.debug("Quote event queued: %s", event)
-        except asyncio.QueueFull:
-            logger.warning("Event queue full — dropping quote event")
-        except Exception as exc:
-            logger.exception("Error in _on_quote: %s", exc)
+    def _call(self, *names: str, default: Any = None, **kwargs: Any) -> Any:  # noqa: ANN401
+        """Попытаться вызвать первый доступный метод `QuikPy` из списка имён."""
+        for name in names:
+            func = getattr(self._qp, name, None)
+            if func is not None:
+                return func(**kwargs) if kwargs else func(*())
+        raise AttributeError(f"None of methods {names} found in QuikPy")
 
-    # -----------------------------------------------------------------------
-    # Публичные методы для подписок
-    # -----------------------------------------------------------------------
-    def subscribe_quotes(self, class_code: str, sec_code: str) -> None:
-        """Подписка на котировки L2."""
-        key = (class_code, sec_code)
-        if key in self._subscribed_quotes:
-            logger.debug("Already subscribed to quotes: %s %s", class_code, sec_code)
-            return
+    # ------------------------------------------------------------------
+    # Подписки на стакан L2
+    # ------------------------------------------------------------------
 
-        try:
+    def subscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        self._quote_callbacks.setdefault(key, []).append(cb)
+        if len(self._quote_callbacks[key]) == 1:
             self._qp.subscribe_level2_quotes(class_code, sec_code)
-            self._subscribed_quotes.add(key)
-            logger.info("Subscribed to quotes: %s %s", class_code, sec_code)
-        except Exception as exc:
-            logger.exception("Failed to subscribe to quotes %s %s: %s", class_code, sec_code, exc)
+            logger.info("Subscribed L2 %s", key)
 
-    def unsubscribe_quotes(self, class_code: str, sec_code: str) -> None:
-        """Отписка от котировок L2."""
-        key = (class_code, sec_code)
-        if key not in self._subscribed_quotes:
-            logger.debug("Not subscribed to quotes: %s %s", class_code, sec_code)
+    def unsubscribe_quotes(self, class_code: str, sec_code: str, cb: QuoteCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        callbacks = self._quote_callbacks.get(key)
+        if not callbacks:
             return
-
-        try:
+        if cb in callbacks:
+            callbacks.remove(cb)
+        if not callbacks:
             self._qp.unsubscribe_level2_quotes(class_code, sec_code)
-            self._subscribed_quotes.discard(key)
-            logger.info("Unsubscribed from quotes: %s %s", class_code, sec_code)
-        except Exception as exc:
-            logger.exception("Failed to unsubscribe from quotes %s %s: %s", class_code, sec_code, exc)
+            del self._quote_callbacks[key]
+            logger.info("Unsubscribed L2 %s", key)
 
-    def subscribe_trades(self, class_code: str, sec_code: str) -> None:
-        """Подписка на сделки."""
-        key = (class_code, sec_code)
-        if key in self._subscribed_trades:
-            logger.debug("Already subscribed to trades: %s %s", class_code, sec_code)
+    # ------------------------------------------------------------------
+    # Подписки на сделки (trades)
+    # ------------------------------------------------------------------
+    def subscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        self._trade_callbacks.setdefault(key, []).append(cb)
+        if len(self._trade_callbacks[key]) == 1:
+            try:
+                self._call("subscribe_trades", "SubscribeTrades", "subscribeTrades", class_code=class_code, sec_code=sec_code)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("subscribe_trades fallback failed: %s", exc)
+            logger.info("Subscribed trades %s", key)
+
+    def unsubscribe_trades(self, class_code: str, sec_code: str, cb: TradeCallback) -> None:
+        key = f"{class_code}.{sec_code}"
+        callbacks = self._trade_callbacks.get(key)
+        if not callbacks:
             return
+        if cb in callbacks:
+            callbacks.remove(cb)
+        if not callbacks:
+            try:
+                self._call("unsubscribe_trades", "UnsubscribeTrades", "unsubscribeTrades", class_code=class_code, sec_code=sec_code)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("unsubscribe_trades fallback failed: %s", exc)
+            del self._trade_callbacks[key]
+            logger.info("Unsubscribed trades %s", key)
 
-        try:
-            self._qp.subscribe_trades(class_code, sec_code)
-            self._subscribed_trades.add(key)
-            logger.info("Subscribed to trades: %s %s", class_code, sec_code)
-        except Exception as exc:
-            logger.exception("Failed to subscribe to trades %s %s: %s", class_code, sec_code, exc)
+    # ------------------------------------------------------------------
+    # Асинхронный интерфейс (получение очереди событий)
+    # ------------------------------------------------------------------
 
-    def unsubscribe_trades(self, class_code: str, sec_code: str) -> None:
-        """Отписка от сделок."""
-        key = (class_code, sec_code)
-        if key not in self._subscribed_trades:
-            logger.debug("Not subscribed to trades: %s %s", class_code, sec_code)
-            return
+    async def events(self) -> asyncio.Queue:  # noqa: D401
+        if self._main_loop is None:
+            self._main_loop = asyncio.get_running_loop()
+            logger.debug("QuikConnector: main loop registered (%s)", self._main_loop)
+        return self._event_queue
 
-        try:
-            self._qp.unsubscribe_trades(class_code, sec_code)
-            self._subscribed_trades.discard(key)
-            logger.info("Unsubscribed from trades: %s %s", class_code, sec_code)
-        except Exception as exc:
-            logger.exception("Failed to unsubscribe from trades %s %s: %s", class_code, sec_code, exc)
+    # ------------------------------------------------------------------
+    # Торговые операции (вызовы через ThreadPoolExecutor)
+    # ------------------------------------------------------------------
 
-    # -----------------------------------------------------------------------
-    # Торговые операции
-    # -----------------------------------------------------------------------
     async def _send_transaction(self, tr: dict[str, Any]) -> dict[str, Any]:
-        """Отправка транзакции в QUIK."""
+        """Универсальный вызов SendTransaction/Send_Transaction c fallback аргументов.
+
+        Проблема: в разных версиях QuikPy доступна либо `send_transaction(self, transaction)`,
+        либо `SendTransaction(self, transaction)`, а иногда – свободная функция, которая
+        ожидает **именованный** аргумент `transaction`. Этот хелпер пытается вызвать все варианты
+        (positional + keyword) до первого успешного ответа.
+        """
+        loop = asyncio.get_running_loop()
+
+        def _try(func, *f_args, **f_kwargs):  # noqa: ANN001
+            try:
+                return loop.run_in_executor(None, func, *f_args, **f_kwargs)
+            except TypeError:
+                return None
+
+        # Перебираем возможные имена метода
+        for name in ("send_transaction", "sendTransaction", "SendTransaction"):
+            func = getattr(self._qp, name, None)
+            if func is None:
+                continue
+            # 1. Пытаемся передать позиционный аргумент
+            fut = _try(func, tr)
+            if fut:
+                return await fut
+            # 2. Пробуем именованный параметр
+            fut = _try(func, transaction=tr)
+            if fut:
+                return await fut
+
+        # Если ни один вариант не подошёл, генерируем исключение
+        raise AttributeError("Не найден совместимый метод send_transaction в QuikPy")
+
+    async def place_limit_order(self, tr: dict[str, Any]) -> dict[str, Any]:
+        print(f"===> Отправка заявки: {tr}")
         try:
-            # QuikPy.send_transaction может быть синхронным, вызываем в executor
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, self._qp.send_transaction, tr)
+            result = await self._send_transaction(tr)
+            print(f"===> Ответ QUIK: {result}")
+            logger.info(f"Ответ QUIK на заявку: {result}")
             return result
         except Exception as exc:
-            logger.exception("Error sending transaction: %s", exc)
+            print(f"===> Ошибка при отправке заявки: {exc}")
+            logger.exception(f"Ошибка при отправке лимитного ордера: {exc}")
+            error_event = {"type": "error", "message": str(exc), "details": {"order": tr}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
-    async def place_limit_order(
-        self,
-        class_code: str,
-        sec_code: str,
-        account: str,
-        client_code: str,
-        operation: str,  # "B" или "S"
-        quantity: int,
-        price: float,
-        trans_id: int,
-    ) -> dict[str, Any]:
-        """Выставление лимитной заявки."""
-        tr = {
-            "ACTION": "NEW_ORDER",
-            "CLASSCODE": class_code,
-            "SECCODE": sec_code,
-            "ACCOUNT": account,
-            "CLIENT_CODE": client_code,
-            "OPERATION": operation,
-            "QUANTITY": str(quantity),
-            "PRICE": str(price),
-            "TYPE": "L",  # Лимитная заявка
-            "TRANS_ID": str(trans_id),
-        }
-        logger.info("Placing limit order: %s", tr)
-        return await self._send_transaction(tr)
-
     async def place_market_order(self, tr: dict[str, Any]) -> dict[str, Any]:
-        """Отправка рыночного ордера."""
         print(f"===> Отправка заявки: {tr}")
         try:
             result = await self._send_transaction(tr)
@@ -247,88 +345,287 @@ class QuikConnector:
                 logger.debug("Event queue full — dropping error event")
             return {"result": -1, "message": str(exc)}
 
-    async def cancel_order(self, class_code: str, sec_code: str, order_key: str) -> dict[str, Any]:
-        """Отмена заявки."""
+    async def cancel_order(
+        self,
+        order_id: str,
+        class_code: str,
+        sec_code: str,
+        trans_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Отправляет транзакцию отмены заявки (KILL_ORDER)."""
         tr = {
             "ACTION": "KILL_ORDER",
             "CLASSCODE": class_code,
             "SECCODE": sec_code,
-            "ORDER_KEY": order_key,
+            "ORDER_KEY": order_id,
         }
-        logger.info("Cancelling order: %s", tr)
-        return await self._send_transaction(tr)
-
-    # -----------------------------------------------------------------------
-    # Асинхронная очередь событий
-    # -----------------------------------------------------------------------
-    async def events(self) -> dict[str, Any]:
-        """Получение событий из очереди (для стратегий)."""
-        return await self._event_queue.get()
-
-    def events_nowait(self) -> dict[str, Any] | None:
-        """Получение событий без ожидания (может вернуть None)."""
+        if trans_id is not None:
+            tr["TRANS_ID"] = str(trans_id)
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return self._event_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            return None
-
-    # -----------------------------------------------------------------------
-    # Информационные методы
-    # -----------------------------------------------------------------------
-    def get_security_info(self, class_code: str, sec_code: str) -> dict[str, Any]:
-        """Получение информации по инструменту."""
-        try:
-            return self._qp.get_security_info(class_code, sec_code)
+            result = await self._send_transaction(tr)
+            return result
         except Exception as exc:
-            logger.exception("Failed to get security info %s %s: %s", class_code, sec_code, exc)
-            return {}
+            logger.exception("Ошибка при отмене ордера: %s", exc)
+            error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.debug("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
 
-    def get_money(self, client_code: str, firm_id: str, limit_kind: int = 0) -> dict[str, Any]:
-        """Получение информации о денежных средствах."""
+    async def modify_order(
+        self,
+        order_id: str,
+        class_code: str,
+        sec_code: str,
+        price: float | int,
+        qty: int | None = None,
+        operation: str | None = None,
+        order_type: str | None = None,
+        trans_id: int | None = None,
+        account: str | None = None,
+        client_code: str | None = None,
+    ) -> dict[str, Any]:
+        """Отправляет транзакцию изменения параметров заявки (MOVE_ORDERS).
+
+        В QUIK PRICE и QUANTITY должны быть строками. Изменяем только указанные параметры.
+        """
+        logger.warning("MODIFY_ORDER: Попытка изменить заявку %s в %s.%s, цена: %s -> %s", 
+                      order_id, class_code, sec_code, price, qty)
+        tr: Dict[str, Any] = {
+            "ACTION": "MOVE_ORDERS",
+            "CLASSCODE": class_code,
+            "SECCODE": sec_code,
+            "ORDER_KEY": order_id,
+            "PRICE": str(price),
+        }
+        # OPERATION ('B'/'S') и TYPE ('L'/'M') повышают вероятность приёма брокером
+        if operation is not None:
+            tr["OPERATION"] = operation
+        if order_type is not None:
+            tr["TYPE"] = order_type
+        if account is not None:
+            tr["ACCOUNT"] = account
+        if client_code is not None:
+            tr["CLIENT_CODE"] = client_code
+        if qty is not None:
+            tr["QUANTITY"] = str(qty)
+        if trans_id is not None:
+            tr["TRANS_ID"] = str(trans_id)
+        logger.warning("MODIFY_ORDER: Финальная транзакция = %s", tr)
+        print(f"===> Отправка заявки: {tr}")
         try:
-            return self._qp.get_money(client_code, firm_id, limit_kind)
+            result = await self._send_transaction(tr)
+            logger.warning("MODIFY_ORDER: Ответ QUIK = %s", result)
+            return result
         except Exception as exc:
-            logger.exception("Failed to get money info: %s", exc)
-            return {}
+            logger.exception("Ошибка при изменении ордера: %s", exc)
+            error_event = {"type": "error", "message": str(exc), "details": {"order_id": order_id}}
+            try:
+                self._event_queue.put_nowait(error_event)
+            except asyncio.QueueFull:
+                logger.debug("Event queue full — dropping error event")
+            return {"result": -1, "message": str(exc)}
 
-    # -----------------------------------------------------------------------
-    # Управление жизненным циклом
-    # -----------------------------------------------------------------------
-    def close(self) -> None:
-        """Закрытие соединения и очистка ресурсов."""
-        logger.info("Closing QuikConnector...")
+    # ------------------------------------------------------------------
+    # Поток‑эмулятор котировок (офлайн)
+    # ------------------------------------------------------------------
 
-        # Отписываемся от всех подписок
-        for class_code, sec_code in list(self._subscribed_quotes):
-            self.unsubscribe_quotes(class_code, sec_code)
+    def _quote_listener_loop(self) -> None:
+        import random, time
 
-        for class_code, sec_code in list(self._subscribed_trades):
-            self.unsubscribe_trades(class_code, sec_code)
+        while not self._stop_quote_thread.is_set():
+            for key, callbacks in list(self._quote_callbacks.items()):
+                class_code, sec_code = key.split(".")
+                quote = {
+                    "class_code": class_code,
+                    "sec_code": sec_code,
+                    "bid": round(random.uniform(100, 110), 2),
+                    "ask": round(random.uniform(100, 110), 2),
+                    "time": time.time(),
+                }
+                try:
+                    self._event_queue.put_nowait(quote)
+                except asyncio.QueueFull:
+                    logger.debug("Event queue full — dropping quote")
 
-        # Закрываем QuikPy соединение
+                for cb in callbacks:
+                    try:
+                        if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                            asyncio.run_coroutine_threadsafe(cb(quote), self._main_loop)
+                        else:
+                            cb(quote)
+                    except Exception as exc:  # pragma: no cover
+                        logger.exception("Callback error: %s", exc)
+            time.sleep(0.5)
+
+    # ------------------------------------------------------------------
+    # Вызов колбэков для trades и orders (шаблон для интеграции)
+    # ------------------------------------------------------------------
+    def _on_trade(self, event):
+        from core.order_manager import OrderManager
+        from config import container as _c  # lazy import to avoid circular
+        payload = event.get("data", event)
+        payload["type"] = "trade"
+        payload["cmd"] = event.get("cmd")
         try:
-            self._qp.close_connection_and_thread()
-            logger.info("QuikPy connection closed")
-        except Exception as exc:
-            logger.exception("Error closing QuikPy connection: %s", exc)
-
-        logger.info("QuikConnector closed")
-
-    def __del__(self):
-        """Деструктор для автоматической очистки ресурсов."""
-        try:
-            self.close()
+            _c.order_manager().on_trade_event(payload)
         except Exception:
-            pass  # Игнорируем ошибки в деструкторе
+            pass
+
+    def _on_order(self, event):
+        from core.order_manager import OrderManager
+        from config import container as _c
+        payload = event.get("data", event)
+        payload["type"] = "order"
+        payload["cmd"] = event.get("cmd")
+        try:
+            _c.order_manager().on_order_event(payload)
+        except Exception:
+            pass
+
+    def _on_trans_reply(self, event):
+        from core.order_manager import OrderManager
+        from config import container as _c
+        payload = event.get("data", event)
+        payload["type"] = "trans_reply"
+        payload["cmd"] = event.get("cmd")
+        try:
+            _c.order_manager().on_trans_reply_event(payload)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Обработчик реальных котировок из QuikPy
+    # ------------------------------------------------------------------
+
+    def _on_quote(self, event: dict[str, Any]):  # noqa: D401
+        """Получает котировку от QuikPy и фан-аутит её подписчикам/очереди."""
+        payload = event.get("data", event)
+        payload["type"] = "quote"
+
+        class_code = payload.get("class_code") or payload.get("classCode")
+        sec_code = payload.get("sec_code") or payload.get("secCode")
+        key = f"{class_code}.{sec_code}" if class_code and sec_code else ""
+
+        # Отправляем в очередь событий (если не переполнена)
+        try:
+            self._event_queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            logger.debug("Event queue full — dropping quote event")
+
+        # Рассылаем всем callback-ам, подписанным на инструмент
+        callbacks = self._quote_callbacks.get(key, [])
+        for cb in list(callbacks):
+            try:
+                if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                    asyncio.run_coroutine_threadsafe(cb(payload), self._main_loop)
+                else:
+                    cb(payload)
+            except Exception as exc:  # pragma: no cover
+                logger.exception("Quote callback error: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Закрытие соединения
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        self._stop_quote_thread.set()
+        if hasattr(self, "_quote_thread") and self._quote_thread.is_alive():
+            self._quote_thread.join(timeout=2)
+        # Стандартное закрытие QuikPy
+        if hasattr(self._qp, "close_connection_and_thread"):
+            self._qp.close_connection_and_thread()
+        elif hasattr(self._qp, "CloseConnectionAndThread"):
+            self._qp.CloseConnectionAndThread()
+        # Monkey-patch: гарантированное завершение CallbackThread
+        if hasattr(self._qp, "callback_exit_event"):
+            self._qp.callback_exit_event.set()
+        if hasattr(self._qp, "callback_thread") and hasattr(self._qp.callback_thread, "is_alive"):
+            try:
+                if self._qp.callback_thread.is_alive():
+                    self._qp.callback_thread.join(timeout=2)
+            except Exception:
+                pass
+        logger.info("QuikConnector closed")
+        QuikConnector._instance = None
+
+    # ------------------------------------------------------------------
+    # Реализация reconnect: пересоздание соединения и повторная подписка
+    # ------------------------------------------------------------------
+    def reconnect(self) -> None:
+        """
+        Пересоздаёт соединение с QuikPy и повторно подписывается на все активные инструменты.
+        """
+        logger.warning("Выполняется reconnect QuikConnector!")
+        self.close()
+        # Пересоздаём QuikPy
+        self._qp = QuikPy()
+        # Повторно подписываемся на все активные инструменты
+        for key in self._quote_callbacks:
+            class_code, sec_code = key.split(".")
+            self._qp.subscribe_level2_quotes(class_code, sec_code)
+            logger.info("Reconnect: подписка L2 %s", key)
+        for key in self._trade_callbacks:
+            class_code, sec_code = key.split(".")
+            self._qp.subscribe_trades(class_code, sec_code)
+            logger.info("Reconnect: подписка trades %s", key)
 
 
 # ---------------------------------------------------------------------------
-# Singleton instance getter
+# Демо‑запуск
 # ---------------------------------------------------------------------------
-def get_quik_connector(
-    host: str = "localhost",
-    requests_port: int = 34130,
-    callbacks_port: int = 34131,
-) -> QuikConnector:
-    """Получение singleton экземпляра QuikConnector."""
-    return QuikConnector(host=host, requests_port=requests_port, callbacks_port=callbacks_port)
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    connector = QuikConnector()  # dummy если QuikPy нет
+
+    async def _demo() -> None:
+        async def async_cb(q: dict[str, Any]):
+            print("async:", q)
+
+        connector.subscribe_quotes("TQBR", "SBER", async_cb)
+        queue = await connector.events()
+        for _ in range(3):
+            evt = await queue.get()
+            print("queue:", evt)
+        connector.unsubscribe_quotes("TQBR", "SBER", async_cb)
+        connector.close()
+
+    # --- Тест новых подписок на trades и orders ---
+    async def test_trades_and_orders():
+        trade_events = []
+        order_events = []
+
+        def trade_cb(event):
+            print("trade event:", event)
+            trade_events.append(event)
+
+        def order_cb(event):
+            print("order event:", event)
+            order_events.append(event)
+
+        # Подписка на сделки
+        connector.subscribe_trades("TQBR", "SBER", trade_cb)
+
+        # Эмулируем приход событий (в реальном режиме это QuikPy вызывает _on_trade/_on_order)
+        connector._on_trade({"price": 123.45, "qty": 10, "side": "buy"})
+        connector._on_order({"order_id": 42, "status": "FILLED", "filled": 10})
+
+        await asyncio.sleep(0.2)
+
+        # Проверяем, что события дошли до колбэков
+        assert trade_events and trade_events[0]["type"] == "trade"
+        assert order_events and order_events[0]["type"] == "order"
+
+        # Отписка
+        connector.unsubscribe_trades("TQBR", "SBER", trade_cb)
+        print("Trade/order subscription test passed.")
+
+    asyncio.run(test_trades_and_orders())
+
+    sys.exit(0)
