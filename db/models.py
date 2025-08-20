@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     DateTime,
     Boolean,
+    Float,  # Добавлено для PairsColumn.width
     ForeignKey,
     Numeric,
     Enum,
@@ -148,7 +149,7 @@ class PairsColumn(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    width: Mapped[int | None] = mapped_column(Integer)
+    width: Mapped[float | None] = mapped_column(Float)  # Изменено с Integer на Float
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

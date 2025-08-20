@@ -187,7 +187,7 @@ class PairUpdate(BaseModel):
 class PairsColumnBase(BaseModel):
     name: str = Field(..., max_length=32)
     position: int
-    width: Optional[int] = None
+    width: Optional[float] = None  # Изменено с int на float для поддержки дробных пикселей
 
 
 class PairsColumnCreate(PairsColumnBase):
@@ -201,7 +201,7 @@ class PairsColumnRead(PairsColumnBase):
 
 class PairsColumnUpdate(BaseModel):
     position: Optional[int] = None
-    width: Optional[int] = None
+    width: Optional[float] = None  # Изменено с int на float
 
 
 # ---------------------------------------------------------------------------
