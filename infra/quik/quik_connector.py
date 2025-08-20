@@ -77,6 +77,41 @@ except ImportError as exc:  # pragma: no cover – офлайн-режим
         def send_transaction(self, tr: dict[str, Any]):
             print(f"!!! DummyQuikPy: send_transaction {tr}")
             logger.info("DummyQuikPy: send_transaction %s", tr)
+            
+            # Эмулируем исполнение сделки через небольшую задержку
+            import threading
+            import random
+            
+            def simulate_trade_execution():
+                """Эмулирует исполнение сделки от QUIK."""
+                try:
+                    # Эмулируем сделку
+                    trade_event = {
+                        "type": "trade",
+                        "order_num": random.randint(100000, 999999),  # Случайный номер ордера
+                        "trans_id": tr.get("TRANS_ID"),
+                        "qty": int(tr.get("QUANTITY", "1")),
+                        "price": round(random.uniform(250.0, 260.0), 2),  # Случайная цена для SBER
+                        "sec_code": tr.get("SECCODE"),
+                        "operation": tr.get("OPERATION"),
+                        "trade_num": random.randint(1000000, 9999999)
+                    }
+                    
+                    print(f"!!! DummyQuikPy: simulating trade {trade_event}")
+                    
+                    # Вызываем коллбэк on_trade если он установлен
+                    if hasattr(self, 'on_trade') and self.on_trade:
+                        self.on_trade(trade_event)
+                        
+                except Exception as e:
+                    print(f"Error in simulated trade callback: {e}")
+                    logger.error(f"Error in simulated trade callback: {e}")
+            
+            # Запускаем эмуляцию через 1-2 секунды
+            delay = random.uniform(1.0, 2.0)
+            timer = threading.Timer(delay, simulate_trade_execution)
+            timer.start()
+            
             return {"result": 0, "message": "stub"}
 
         # --- Завершение --------------------------------------------------

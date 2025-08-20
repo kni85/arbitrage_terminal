@@ -166,18 +166,23 @@ const handleWsOrderMessage = (ev) => {
         if(!row) return;
         row._inFlight=false;
         if(ok){
-            // Обновляем статистику из базы данных реальных сделок
+            // Сначала увеличиваем exec_qty локально для мгновенной реакции
+            const execQtyCell = cellById(row,'exec_qty');
+            const prevQty = parseInt(execQtyCell.textContent)||0;
+            const newQty = prevQty+1;
+            execQtyCell.textContent = newQty.toString();
+            updateLeaves(row);
+            
+            // Затем пытаемся синхронизировать с базой данных
             const pairId = row.dataset.id;
             if(pairId) {
-                updatePairStatsFromDB(row, parseInt(pairId, 10));
-            } else {
-                // Fallback: старая логика для строк без ID
-                const execQtyCell = cellById(row,'exec_qty');
-                const prevQty = parseInt(execQtyCell.textContent)||0;
-                const newQty = prevQty+1;
-                execQtyCell.textContent = newQty.toString();
-                updateLeaves(row);
+                // Асинхронно обновляем данные из БД, но не блокируем GUI
+                updatePairStatsFromDB(row, parseInt(pairId, 10)).catch(error => {
+                    console.warn(`Failed to sync pair ${pairId} with database:`, error);
+                    // Если синхронизация не удалась, оставляем локальные значения
+                });
             }
+            
             // auto-stop
             const leaves = parseInt(cellById(row,'leaves_qty').textContent)||0;
             if(leaves<=0){
@@ -439,31 +444,32 @@ async function updatePairStatsFromDB(row, pairId) {
     try {
         const stats = await fetchJson(`${API_BASE}/pairs/${pairId}/stats`);
         
-        // Обновляем exec_price
-        const execPriceCell = cellById(row, 'exec_price');
-        if (stats.exec_price !== null) {
-            execPriceCell.textContent = stats.exec_price.toFixed(4);
-        } else {
-            execPriceCell.textContent = '';
+        // Проверяем, что получили валидные данные
+        if (!stats || typeof stats !== 'object') {
+            throw new Error('Server returned null or invalid data - likely server is down');
         }
         
-        // Обновляем exec_qty
-        const execQtyCell = cellById(row, 'exec_qty');
-        execQtyCell.textContent = stats.exec_qty.toString();
+        // Обновляем exec_price только если получили реальные данные из БД
+        const execPriceCell = cellById(row, 'exec_price');
+        if (stats.exec_price !== null && stats.exec_price !== undefined) {
+            execPriceCell.textContent = stats.exec_price.toFixed(4);
+        }
         
-        // Пересчитываем leaves_qty
-        updateLeaves(row);
+        // Обновляем exec_qty только если он больше текущего (избегаем откатов)
+        const execQtyCell = cellById(row, 'exec_qty');
+        const currentQty = parseInt(execQtyCell.textContent) || 0;
+        if (stats.exec_qty > currentQty) {
+            execQtyCell.textContent = stats.exec_qty.toString();
+            updateLeaves(row);
+        }
         
         if(DEBUG_API) {
             console.log(`[TRADE STATS] pair_id=${pairId}:`, stats);
         }
     } catch (error) {
-        console.error('Failed to update pair stats from DB:', error);
-        // Fallback: увеличиваем exec_qty на 1
-        const execQtyCell = cellById(row, 'exec_qty');
-        const prevQty = parseInt(execQtyCell.textContent) || 0;
-        execQtyCell.textContent = (prevQty + 1).toString();
-        updateLeaves(row);
+        console.warn(`Failed to update pair stats from DB (pair_id=${pairId}):`, error);
+        // НЕ делаем fallback здесь - exec_qty уже увеличен в вызывающем коде
+        throw error; // Пробрасываем ошибку для обработки в catch блоке выше
     }
 }
 
