@@ -273,11 +273,11 @@ function attachEditableHandlers(row, tableType){
                 } else if(tableType==='assets'){
                     // сначала коммитим строку в БД
                     const tr = td.closest('tr');
-                    ensureRowPersisted('assets', tr).then(()=>{ saveAssetsTable(); });
+                    ensureRowPersisted('assets', tr); // убрали .then(saveAssetsTable) - дублирование
                     return td.blur();
                 } else if(tableType==='accounts'){
                     const tr = td.closest('tr');
-                    ensureRowPersisted('accounts', tr); // saveAccountsTable() не нужен - ensureRowPersisted уже сохраняет
+                    ensureRowPersisted('accounts', tr);
                     return td.blur();
                 }
                 td.blur();
@@ -290,10 +290,10 @@ function attachEditableHandlers(row, tableType){
             // сохраняем при уходе фокуса, если значение уже принято
             if(tableType==='assets'){
                 const tr = td.closest('tr');
-                ensureRowPersisted('assets', tr).then(()=>{ saveAssetsTable(); });
+                ensureRowPersisted('assets', tr); // убрали .then(saveAssetsTable) - дублирование
             } else if(tableType==='accounts'){
                 const tr = td.closest('tr');
-                ensureRowPersisted('accounts', tr); // saveAccountsTable() не нужен - ensureRowPersisted уже сохраняет
+                ensureRowPersisted('accounts', tr);
             }
         });
     });
@@ -1320,6 +1320,13 @@ window.addEventListener('load', async ()=>{
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
 async function ensureRowPersisted(tableType, tr){
     if(!tr) return;
+    
+    // Защита от повторных вызовов
+    if(tr.dataset.persisting === 'true') {
+        console.log(`[ensureRowPersisted] Skipping duplicate call for ${tableType} row`);
+        return;
+    }
+    tr.dataset.persisting = 'true';
     const rowData = extractRowDataFromTr(tableType, tr);
     const id = tr.dataset.id ? parseInt(tr.dataset.id, 10) : null;
     const base = `${API_BASE}/${tableType}`;
@@ -1331,6 +1338,7 @@ async function ensureRowPersisted(tableType, tr){
                 tr.dataset.id = String(ex.id);
                 await patchJson(`${base}/${ex.id}`, rowData);
                 persistRowToLocalStorage(tableType, tr, { ...rowData, id: ex.id });
+                tr.dataset.persisting = 'false'; // сбрасываем флаг
                 return;
             }
         }
@@ -1340,6 +1348,7 @@ async function ensureRowPersisted(tableType, tr){
                 tr.dataset.id = String(ex.id);
                 await patchJson(`${base}/${ex.id}`, rowData);
                 persistRowToLocalStorage(tableType, tr, { ...rowData, id: ex.id });
+                tr.dataset.persisting = 'false'; // сбрасываем флаг
                 return;
             }
         }
@@ -1347,6 +1356,7 @@ async function ensureRowPersisted(tableType, tr){
         const hasData = Object.values(rowData).some(v => v !== null && v !== '' && v !== undefined && v !== 0);
         if(!hasData) {
             console.log('Skipping POST - no meaningful data:', rowData);
+            tr.dataset.persisting = 'false'; // сбрасываем флаг
             return; // Не создаём пустые записи
         }
         
@@ -1372,6 +1382,9 @@ async function ensureRowPersisted(tableType, tr){
             persistRowToLocalStorage(tableType, tr, { ...rowData, id });
         }
     }
+    
+    // Сбрасываем флаг после завершения
+    tr.dataset.persisting = 'false';
 }
 
 function extractRowDataFromTr(tableType, tr){
