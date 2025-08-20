@@ -807,7 +807,8 @@ function addPairsRow(data){
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
                     validateAllAssetsInRow(row); 
-                    savePairsTable(); 
+                    // Важно: сохранить изменения в БД после обновления DOM
+                    setTimeout(() => savePairsTable(), 10); 
                 });
                 break;
             case 'started':
