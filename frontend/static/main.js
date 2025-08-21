@@ -494,27 +494,32 @@ function closeRowWs(row){
 // Asset autocomplete functionality (fixed version below)
 
 // Validate all asset codes in a row and clear validation errors
-function validateAllAssetsInRow(row) {
+function validateAllFieldsInRow(row) {
     const asset1Cell = cellById(row, 'asset_1');
     const asset2Cell = cellById(row, 'asset_2');
+    const account1Cell = cellById(row, 'account_1');
+    const account2Cell = cellById(row, 'account_2');
     const errorCell = cellById(row, 'error');
     
     if (!errorCell) return;
     
     let hasErrors = false;
     
-    // Clear existing asset validation errors
+    // Clear existing validation errors
     const currentError = errorCell.textContent;
     let cleanedError = currentError;
     
-    console.log('validateAllAssetsInRow - before:', {
+    console.log('validateAllFieldsInRow - before:', {
         asset1: asset1Cell ? asset1Cell.textContent : 'null',
         asset2: asset2Cell ? asset2Cell.textContent : 'null',
+        account1: account1Cell ? account1Cell.textContent : 'null',
+        account2: account2Cell ? account2Cell.textContent : 'null',
         currentError: currentError
     });
     
-    // Remove any "Invalid asset code:" messages
+    // Remove any validation error messages
     cleanedError = cleanedError.replace(/Invalid asset code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
+    cleanedError = cleanedError.replace(/Invalid account code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
     cleanedError = cleanedError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up leading/trailing separators
     
     // Validate asset_1
@@ -543,9 +548,35 @@ function validateAllAssetsInRow(row) {
         }
     }
     
+    // Validate account_1
+    if (account1Cell) {
+        const alias1 = account1Cell.textContent.trim();
+        if (alias1 && !lookupAccount(alias1)) {
+            const errorMsg = `Invalid account code: ${alias1}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            account1Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
+        } else {
+            account1Cell.style.borderColor = '';
+        }
+    }
+    
+    // Validate account_2
+    if (account2Cell) {
+        const alias2 = account2Cell.textContent.trim();
+        if (alias2 && !lookupAccount(alias2)) {
+            const errorMsg = `Invalid account code: ${alias2}`;
+            cleanedError = cleanedError ? `${cleanedError}; ${errorMsg}` : errorMsg;
+            account2Cell.style.borderColor = '#ff4444';
+            hasErrors = true;
+        } else {
+            account2Cell.style.borderColor = '';
+        }
+    }
+    
     errorCell.textContent = cleanedError;
     
-    console.log('validateAllAssetsInRow - after:', {
+    console.log('validateAllFieldsInRow - after:', {
         cleanedError: cleanedError,
         hasErrors: hasErrors,
         finalErrorText: errorCell.textContent
@@ -580,6 +611,35 @@ function completeSetupAssetAutocomplete(cell) {
                 }
             } catch (e) {
                 console.error('Error loading asset codes:', e);
+            }
+        }
+        
+        return codes.sort(); // Sort alphabetically
+    }
+    
+    // Get available account codes from accounts_table
+    function getAccountCodes() {
+        const codes = [];
+        
+        // Try in-memory cache first
+        if (window._accountIdMap) {
+            Object.keys(window._accountIdMap).forEach(alias => {
+                if (alias && alias.trim()) codes.push(alias.trim());
+            });
+        } else {
+            // Fallback to localStorage
+            try {
+                const data = localStorage.getItem('accounts_table');
+                if (data) {
+                    const accounts = JSON.parse(data);
+                    accounts.forEach(account => {
+                        if (account.alias && account.alias.trim()) {
+                            codes.push(account.alias.trim());
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('Error loading account codes:', e);
             }
         }
         
@@ -682,7 +742,7 @@ function completeSetupAssetAutocomplete(cell) {
         if (!row) return;
         
         // Use the global validation function for consistency
-        validateAllAssetsInRow(row);
+        validateAllFieldsInRow(row);
     }
     
     // Event listeners
@@ -766,6 +826,190 @@ function completeSetupAssetAutocomplete(cell) {
     });
 }
 
+function completeSetupAccountAutocomplete(cell) {
+    let dropdown = null;
+    let selectedIndex = -1;
+    
+    // Create dropdown
+    function createDropdown(filteredCodes) {
+        if (dropdown) {
+            dropdown.remove();
+        }
+        
+        if (filteredCodes.length === 0) return;
+        
+        dropdown = document.createElement('div');
+        dropdown.className = 'account-autocomplete-dropdown';
+        dropdown.style.cssText = `
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            min-width: 120px;
+        `;
+        
+        filteredCodes.forEach((code, index) => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = code;
+            item.style.cssText = `
+                padding: 8px 12px;
+                cursor: pointer;
+                border-bottom: 1px solid #eee;
+                background: ${index === selectedIndex ? '#e3f2fd' : 'white'};
+            `;
+            
+            item.addEventListener('mouseenter', () => {
+                selectedIndex = index;
+                updateSelection();
+            });
+            
+            item.addEventListener('click', () => {
+                selectAccount(code);
+            });
+            
+            dropdown.appendChild(item);
+        });
+        
+        // Position dropdown
+        const rect = cell.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+        dropdown.style.left = (rect.left + window.scrollX) + 'px';
+        
+        document.body.appendChild(dropdown);
+    }
+    
+    // Update selection highlighting
+    function updateSelection() {
+        if (!dropdown) return;
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        items.forEach((item, index) => {
+            item.style.background = index === selectedIndex ? '#e3f2fd' : 'white';
+        });
+    }
+    
+    // Select account and validate
+    function selectAccount(code) {
+        cell.textContent = code;
+        cell.dataset.value = code;
+        hideDropdown();
+        
+        // Validate account code
+        validateAccountCode(cell, code);
+        
+        // Save table and trigger other updates
+        const row = cell.closest('tr');
+        if (row) {
+            savePairsTable();
+            updateHitPrice(row);
+            updateLeaves(row);
+            checkRowForTrade(row);
+        }
+    }
+    
+    // Hide dropdown
+    function hideDropdown() {
+        if (dropdown) {
+            dropdown.remove();
+            dropdown = null;
+        }
+        selectedIndex = -1;
+    }
+    
+    // Validate account code and show error if invalid
+    function validateAccountCode(cell, code) {
+        const row = cell.closest('tr');
+        if (!row) return;
+        
+        // Use the global validation function for consistency
+        validateAllFieldsInRow(row);
+    }
+    
+    // Event listeners
+    cell.addEventListener('input', (e) => {
+        const value = cell.textContent.trim();
+        const allCodes = getAccountCodes();
+        const filteredCodes = allCodes.filter(code => 
+            code.toLowerCase().includes(value.toLowerCase())
+        );
+        
+        selectedIndex = -1;
+        createDropdown(filteredCodes);
+    });
+    
+    cell.addEventListener('keydown', (e) => {
+        if (!dropdown) return;
+        
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelection();
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelection();
+                break;
+                
+            case 'Enter':
+                e.preventDefault();
+                if (selectedIndex >= 0 && items[selectedIndex]) {
+                    selectAccount(items[selectedIndex].textContent);
+                } else {
+                    // Validate current input
+                    const currentValue = cell.textContent.trim();
+                    validateAccountCode(cell, currentValue);
+                    hideDropdown();
+                    
+                    // Trigger normal Enter behavior
+                    const newVal = cell.textContent.trim();
+                    cell.dataset.value = newVal;
+                    const row = cell.closest('tr');
+                    if (row) {
+                        savePairsTable();
+                        updateHitPrice(row);
+                        updateLeaves(row);
+                        checkRowForTrade(row);
+                    }
+                }
+                break;
+                
+            case 'Escape':
+                e.preventDefault();
+                hideDropdown();
+                break;
+        }
+    });
+    
+    cell.addEventListener('blur', (e) => {
+        // Delay hiding to allow click on dropdown
+        setTimeout(() => {
+            const currentValue = cell.textContent.trim();
+            validateAccountCode(cell, currentValue);
+            hideDropdown();
+        }, 200);
+    });
+    
+    cell.addEventListener('focus', () => {
+        const value = cell.textContent.trim();
+        if (value) {
+            const allCodes = getAccountCodes();
+            const filteredCodes = allCodes.filter(code => 
+                code.toLowerCase().includes(value.toLowerCase())
+            );
+            createDropdown(filteredCodes);
+        }
+    });
+}
+
 // -------------------- Add row helper --------------------
 function addPairsRow(data){
     const row = pairsTbody.insertRow(-1);
@@ -784,6 +1028,14 @@ function addPairsRow(data){
         completeSetupAssetAutocomplete(td);
         return td; 
     };
+    const makeAccountAutocomplete = (value='')=>{ 
+        const td = document.createElement('td'); 
+        td.contentEditable = 'true'; 
+        td.textContent = value; 
+        td.classList.add('account-autocomplete');
+        completeSetupAccountAutocomplete(td);
+        return td; 
+    };
 
     let sel1, sel2, cb;
 
@@ -792,8 +1044,8 @@ function addPairsRow(data){
         switch(colId){
             case 'asset_1': td = makeAssetAutocomplete(data?data[0]:''); break;
             case 'asset_2': td = makeAssetAutocomplete(data?data[1]:''); break;
-            case 'account_1': td = makeEditable(data?data[2]:''); break;
-            case 'account_2': td = makeEditable(data?data[3]:''); break;
+            case 'account_1': td = makeAccountAutocomplete(data?data[2]:''); break;
+            case 'account_2': td = makeAccountAutocomplete(data?data[3]:''); break;
             case 'side_1': [td,sel1] = makeSelect(data? (data[4] || 'BUY') :'BUY'); break;
             case 'side_2': [td,sel2] = makeSelect(data? (data[5] || 'BUY') :'BUY'); break;
             case 'qty_ratio_1': td = makeEditable(data?data[6]:''); break;
@@ -826,7 +1078,7 @@ function addPairsRow(data){
                     cellById(row,'exec_price').textContent=''; 
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
-                    validateAllAssetsInRow(row); 
+                    validateAllFieldsInRow(row); 
                     
                     console.log('Reset clicked - after validation:', {
                         exec_price: cellById(row,'exec_price').textContent,
