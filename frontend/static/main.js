@@ -462,8 +462,19 @@ function lookupAccount(alias){
     if(!data) return null;
     try{
         const rows = JSON.parse(data);
-        const r = rows.find(x=>x[0]===alias);
-        return r? {account:r[2], client:r[3]}: null;
+        // Handle both old array format and new object format
+        if (Array.isArray(rows) && rows.length > 0) {
+            if (Array.isArray(rows[0])) {
+                // Old format: array of arrays
+                const r = rows.find(x=>x[0]===alias);
+                return r? {account:r[2], client:r[3]}: null;
+            } else {
+                // New format: array of objects
+                const r = rows.find(x=>x.alias===alias);
+                return r? {account:r.account_number, client:r.client_code}: null;
+            }
+        }
+        return null;
     }catch(_){ return null; }
 }
 
@@ -611,35 +622,6 @@ function completeSetupAssetAutocomplete(cell) {
                 }
             } catch (e) {
                 console.error('Error loading asset codes:', e);
-            }
-        }
-        
-        return codes.sort(); // Sort alphabetically
-    }
-    
-    // Get available account codes from accounts_table
-    function getAccountCodes() {
-        const codes = [];
-        
-        // Try in-memory cache first
-        if (window._accountIdMap) {
-            Object.keys(window._accountIdMap).forEach(alias => {
-                if (alias && alias.trim()) codes.push(alias.trim());
-            });
-        } else {
-            // Fallback to localStorage
-            try {
-                const data = localStorage.getItem('accounts_table');
-                if (data) {
-                    const accounts = JSON.parse(data);
-                    accounts.forEach(account => {
-                        if (account.alias && account.alias.trim()) {
-                            codes.push(account.alias.trim());
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error('Error loading account codes:', e);
             }
         }
         
@@ -824,6 +806,44 @@ function completeSetupAssetAutocomplete(cell) {
             createDropdown(filteredCodes);
         }
     });
+}
+
+// Get available account codes from accounts_table
+function getAccountCodes() {
+    const codes = [];
+    
+    console.log('getAccountCodes called');
+    console.log('window._accountIdMap:', window._accountIdMap);
+    
+    // Try in-memory cache first
+    if (window._accountIdMap) {
+        Object.keys(window._accountIdMap).forEach(alias => {
+            if (alias && alias.trim()) codes.push(alias.trim());
+        });
+        console.log('Codes from _accountIdMap:', codes);
+    } else {
+        // Fallback to localStorage
+        try {
+            const data = localStorage.getItem('accounts_table');
+            console.log('localStorage accounts_table:', data);
+            if (data) {
+                const accounts = JSON.parse(data);
+                console.log('Parsed accounts:', accounts);
+                accounts.forEach(account => {
+                    if (account.alias && account.alias.trim()) {
+                        codes.push(account.alias.trim());
+                    }
+                });
+                console.log('Codes from localStorage:', codes);
+            }
+        } catch (e) {
+            console.error('Error loading account codes:', e);
+        }
+    }
+    
+    const sortedCodes = codes.sort();
+    console.log('Final sorted codes:', sortedCodes);
+    return sortedCodes; // Sort alphabetically
 }
 
 function completeSetupAccountAutocomplete(cell) {
