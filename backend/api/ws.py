@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -11,6 +12,7 @@ from core import ws_actions as actions
 from config import container
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws")
@@ -65,7 +67,21 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             msg = await ws.receive_json()
             action = msg.get("action")
             if action == "start":
-                class_code = msg["class_code"].strip(); sec_code = msg["sec_code"].strip()
+                class_code_raw = msg.get("class_code")
+                sec_code_raw = msg.get("sec_code")
+                
+                # Проверяем, что поля не None и не пустые
+                if not class_code_raw or not sec_code_raw:
+                    await send_json_safe({"type": "error", "message": "Missing class_code or sec_code"})
+                    continue
+                    
+                class_code = class_code_raw.strip()
+                sec_code = sec_code_raw.strip()
+                
+                if not class_code or not sec_code:
+                    await send_json_safe({"type": "error", "message": "Empty class_code or sec_code"})
+                    continue
+                
                 if current_sub:
                     actions.stop_quotes(*current_sub, quote_callback, broker=broker)
                 actions.start_quotes(class_code, sec_code, quote_callback, broker=broker)
@@ -80,8 +96,17 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             elif action == "send_order":
                 resp = await actions.send_order(msg, broker=broker)
                 await send_json_safe({"type": "order_reply", "data": resp})
+            else:
+                await send_json_safe({"type": "error", "message": f"Unknown action: {action}"})
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        # Логируем ошибку и отправляем клиенту, но не падаем
+        logger.exception("WebSocket error: %s", e)
+        try:
+            await send_json_safe({"type": "error", "message": f"Server error: {str(e)}"})
+        except Exception:
+            pass  # Если даже отправка ошибки не удается, просто игнорируем
     finally:
         if current_sub:
             actions.stop_quotes(*current_sub, quote_callback, broker=broker)

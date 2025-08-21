@@ -42,6 +42,11 @@ def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: Broke
 async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict[str, Any]:  # noqa: D401
     """Отправляет одиночный лимитный или рыночный ордер через QuikConnector."""
     order_type = data.get("order_type", "L")  # 'L' | 'M'
+    
+    # Безопасно получаем количество и цену
+    quantity = data.get("quantity", 0)
+    price = data.get("price", 0)
+    
     order = {
         "ACTION": "NEW_ORDER",
         "CLASSCODE": data.get("class_code"),
@@ -49,12 +54,12 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
         "ACCOUNT": data.get("account"),
         "CLIENT_CODE": data.get("client_code"),
         "OPERATION": data.get("operation"),
-        "QUANTITY": str(data.get("quantity")),
+        "QUANTITY": str(quantity) if quantity is not None else "0",
     }
     if order_type == "M":
         order.update({"PRICE": "0", "TYPE": "M"})
     else:
-        order.update({"PRICE": str(data.get("price")), "TYPE": "L"})
+        order.update({"PRICE": str(price) if price is not None else "0", "TYPE": "L"})
 
     async with AsyncSessionLocal() as sess:
         next_id = await get_next_trans_id(sess)
@@ -80,9 +85,25 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
 async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) -> Tuple[bool, str]:  # noqa: D401
     """Отправляет два синхронных рыночных ордера (парный арбитраж)."""
     try:
-        class_code_1, sec_code_1 = data["class_code_1"], data["sec_code_1"]
-        class_code_2, sec_code_2 = data["class_code_2"], data["sec_code_2"]
-        side_1, side_2 = data["side_1"], data["side_2"]
+        # Безопасно получаем обязательные поля
+        class_code_1 = data.get("class_code_1")
+        sec_code_1 = data.get("sec_code_1")
+        class_code_2 = data.get("class_code_2")
+        sec_code_2 = data.get("sec_code_2")
+        side_1 = data.get("side_1")
+        side_2 = data.get("side_2")
+        
+        # Проверяем обязательные поля
+        if not all([class_code_1, sec_code_1, class_code_2, sec_code_2, side_1, side_2]):
+            missing_fields = []
+            if not class_code_1: missing_fields.append("class_code_1")
+            if not sec_code_1: missing_fields.append("sec_code_1") 
+            if not class_code_2: missing_fields.append("class_code_2")
+            if not sec_code_2: missing_fields.append("sec_code_2")
+            if not side_1: missing_fields.append("side_1")
+            if not side_2: missing_fields.append("side_2")
+            return False, f"Missing required fields: {', '.join(missing_fields)}"
+        
         qty1 = int(data.get("qty_ratio_1", 0))
         qty2 = int(data.get("qty_ratio_2", 0))
         account1, client1 = data.get("account_1"), data.get("client_code_1")
