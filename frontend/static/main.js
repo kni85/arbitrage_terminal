@@ -427,12 +427,60 @@ function updateLeaves(row){
 }
 
 function updateHitPrice(row){
-    const p1 = parseFloat(cellById(row,'price_1').textContent)||0;
-    const p2 = parseFloat(cellById(row,'price_2').textContent)||0;
+    const price1Cell = cellById(row,'price_1');
+    const price2Cell = cellById(row,'price_2');
+    const hitPriceCell = cellById(row,'hit_price');
+    const errorCell = cellById(row,'error');
+    
+    const p1Text = price1Cell.textContent.trim();
+    const p2Text = price2Cell.textContent.trim();
+    const p1 = parseFloat(p1Text);
+    const p2 = parseFloat(p2Text);
+    
+    // Проверяем наличие цен
+    const hasPrice1 = p1Text && !isNaN(p1) && p1 > 0;
+    const hasPrice2 = p2Text && !isNaN(p2) && p2 > 0;
+    
+    if (!hasPrice1 || !hasPrice2) {
+        // Есть проблемы с ценами - не рассчитываем спред
+        hitPriceCell.textContent = '';
+        
+        // Добавляем ошибку о недоступности цен
+        let currentError = errorCell.textContent;
+        
+        // Убираем старые ошибки о ценах
+        currentError = currentError.replace(/Price not available: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
+        currentError = currentError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up separators
+        
+        let priceError = '';
+        if (!hasPrice1 && !hasPrice2) {
+            priceError = 'Price not available: price_1, price_2';
+        } else if (!hasPrice1) {
+            priceError = 'Price not available: price_1';
+        } else if (!hasPrice2) {
+            priceError = 'Price not available: price_2';
+        }
+        
+        if (priceError) {
+            errorCell.textContent = currentError ? `${currentError}; ${priceError}` : priceError;
+        }
+        
+        return; // Не рассчитываем hit_price при отсутствии цен
+    }
+    
+    // Цены есть - очищаем ошибки о ценах и рассчитываем спред
+    if (errorCell) {
+        let currentError = errorCell.textContent;
+        // Убираем ошибки о недоступности цен
+        currentError = currentError.replace(/Price not available: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
+        currentError = currentError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up separators
+        errorCell.textContent = currentError;
+    }
+    
     const r1 = parseFloat(cellById(row,'price_ratio_1').textContent)||0;
     const r2 = parseFloat(cellById(row,'price_ratio_2').textContent)||0;
     const hit = p1*r1 - p2*r2;
-    cellById(row,'hit_price').textContent = hit ? hit.toFixed(2): '';
+    hitPriceCell.textContent = hit ? hit.toFixed(2): '';
 }
 
 // ----- Utilities ---------------------------------------
@@ -528,7 +576,7 @@ function validateAllFieldsInRow(row) {
         currentError: currentError
     });
     
-    // Remove any validation error messages
+    // Remove any validation error messages (but keep price errors - they're managed by updateHitPrice)
     cleanedError = cleanedError.replace(/Invalid asset code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
     cleanedError = cleanedError.replace(/Invalid account code: [^,;\n]+(,\s*|;\s*|\n|$)/g, '').trim();
     cleanedError = cleanedError.replace(/^[,;\s]+|[,;\s]+$/g, ''); // Clean up leading/trailing separators
@@ -1088,7 +1136,7 @@ function addPairsRow(data){
             case 'reset':
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
-                btn.addEventListener('click', ()=>{ 
+                                btn.addEventListener('click', ()=>{ 
                     console.log('Reset clicked - before changes:', {
                         exec_price: cellById(row,'exec_price').textContent,
                         exec_qty: cellById(row,'exec_qty').textContent,
@@ -1098,12 +1146,24 @@ function addPairsRow(data){
                     cellById(row,'exec_price').textContent=''; 
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
+                    
+                    // Очищаем все ошибки (включая ошибки о ценах) и пересчитываем hit_price
+                    const errorCell = cellById(row,'error');
+                    if (errorCell) {
+                        errorCell.textContent = '';
+                    }
+                    
+                    // Пересчитываем hit_price (это также проверит цены и установит ошибки если нужно)
+                    updateHitPrice(row);
+                    
+                    // Валидируем активы и аккаунты
                     validateAllFieldsInRow(row); 
                     
                     console.log('Reset clicked - after validation:', {
                         exec_price: cellById(row,'exec_price').textContent,
                         exec_qty: cellById(row,'exec_qty').textContent,
-                        error: cellById(row,'error').textContent
+                        error: cellById(row,'error').textContent,
+                        hit_price: cellById(row,'hit_price').textContent
                     });
                     
                     // Важно: сохранить изменения в БД после обновления DOM
@@ -1112,7 +1172,7 @@ function addPairsRow(data){
                             error: cellById(row,'error').textContent
                         });
                         savePairsTable();
-                    }, 10); 
+                    }, 10);
                 });
                 break;
             case 'started':
@@ -1244,6 +1304,26 @@ pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTa
 function checkRowForTrade(row){
     if(!cellById(row,'started').querySelector('input').checked) return; // выключено
     if(row._inFlight) return; // ждём предыдущий ответ
+
+    // Проверяем наличие цен перед торговлей
+    const price1Cell = cellById(row,'price_1');
+    const price2Cell = cellById(row,'price_2');
+    const p1Text = price1Cell.textContent.trim();
+    const p2Text = price2Cell.textContent.trim();
+    const p1 = parseFloat(p1Text);
+    const p2 = parseFloat(p2Text);
+    
+    const hasPrice1 = p1Text && !isNaN(p1) && p1 > 0;
+    const hasPrice2 = p2Text && !isNaN(p2) && p2 > 0;
+    
+    if (!hasPrice1 || !hasPrice2) {
+        // Нет цен - не торгуем
+        console.log('Trade blocked: missing prices', {
+            hasPrice1, hasPrice2, 
+            price_1: p1Text, price_2: p2Text
+        });
+        return;
+    }
 
     const side1 = cellById(row,'side_1').querySelector('select').value;
     const priceTarget = parseFloat(cellById(row,'price').textContent);
