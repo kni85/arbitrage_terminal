@@ -1166,16 +1166,16 @@ function addPairsRow(data){
                         hit_price: cellById(row,'hit_price').textContent
                     });
                     
-                    // Сначала отправляем DELETE запрос для очистки trades в БД
-                    const rowId = row.dataset.id;
-                    if (rowId) {
-                        try {
-                            await deleteJson(`${API_BASE}/pairs/${rowId}/trades`);
-                            console.log('Reset - cleared trades from DB for pair', rowId);
-                        } catch (e) {
-                            console.warn('Reset - failed to clear trades:', e);
-                        }
-                    }
+                    // TODO: Implement trades clearing when backend endpoint is ready
+                    // const rowId = row.dataset.id;
+                    // if (rowId) {
+                    //     try {
+                    //         await deleteJson(`${API_BASE}/pairs/${rowId}/trades`);
+                    //         console.log('Reset - cleared trades from DB for pair', rowId);
+                    //     } catch (e) {
+                    //         console.warn('Reset - failed to clear trades:', e);
+                    //     }
+                    // }
                     
                     // Сохранить изменения в БД после обновления DOM
                     setTimeout(() => {
