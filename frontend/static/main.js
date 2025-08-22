@@ -1136,7 +1136,7 @@ function addPairsRow(data){
             case 'reset':
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
-                                btn.addEventListener('click', ()=>{ 
+                                btn.addEventListener('click', async ()=>{ 
                     console.log('Reset clicked - before changes:', {
                         exec_price: cellById(row,'exec_price').textContent,
                         exec_qty: cellById(row,'exec_qty').textContent,
@@ -1147,17 +1147,17 @@ function addPairsRow(data){
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
                     
-                    // Очищаем все ошибки (включая ошибки о ценах) и пересчитываем hit_price
+                    // Очищаем все ошибки (включая ошибки о ценах)
                     const errorCell = cellById(row,'error');
                     if (errorCell) {
                         errorCell.textContent = '';
                     }
                     
-                    // Пересчитываем hit_price (это также проверит цены и установит ошибки если нужно)
-                    updateHitPrice(row);
-                    
-                    // Валидируем активы и аккаунты
+                    // Валидируем активы и аккаунты (НЕ вызываем updateHitPrice чтобы не восстановить price errors)
                     validateAllFieldsInRow(row); 
+                    
+                    // Принудительно очищаем hit_price (без проверки цен)
+                    cellById(row,'hit_price').textContent = '';
                     
                     console.log('Reset clicked - after validation:', {
                         exec_price: cellById(row,'exec_price').textContent,
@@ -1166,12 +1166,28 @@ function addPairsRow(data){
                         hit_price: cellById(row,'hit_price').textContent
                     });
                     
-                    // Важно: сохранить изменения в БД после обновления DOM
+                    // Сначала отправляем DELETE запрос для очистки trades в БД
+                    const rowId = row.dataset.id;
+                    if (rowId) {
+                        try {
+                            await deleteJson(`${API_BASE}/pairs/${rowId}/trades`);
+                            console.log('Reset - cleared trades from DB for pair', rowId);
+                        } catch (e) {
+                            console.warn('Reset - failed to clear trades:', e);
+                        }
+                    }
+                    
+                    // Сохранить изменения в БД после обновления DOM
                     setTimeout(() => {
                         console.log('Reset - saving to DB:', {
                             error: cellById(row,'error').textContent
                         });
                         savePairsTable();
+                        
+                        // После сохранения можно пересчитать hit_price (если нужно)
+                        setTimeout(() => {
+                            updateHitPrice(row);
+                        }, 50);
                     }, 10);
                 });
                 break;
