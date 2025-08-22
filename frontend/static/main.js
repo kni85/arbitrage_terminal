@@ -1277,6 +1277,11 @@ function restorePairsTable(){
         if(Array.isArray(item)){
             addPairsRow(item);
         } else if(item && typeof item==='object'){
+            // Логируем что именно пришло из БД по ошибкам
+            if (item.error) {
+                console.log(`restorePairsTable - item ${index} has error from DB:`, item.error);
+            }
+            
             const arr = [
                 item.asset_1||'', item.asset_2||'', item.account_1||'', item.account_2||'', item.side_1||'BUY', item.side_2||'BUY',
                 String(item.qty_ratio_1??''), String(item.qty_ratio_2??''), String(item.price_ratio_1??''), String(item.price_ratio_2??''), String(item.price??''),
@@ -1286,7 +1291,7 @@ function restorePairsTable(){
             const r = addPairsRow(arr);
             if(item.id) {
                 r.dataset.id = String(item.id);
-                console.log(`restorePairsTable - set row.dataset.id = ${item.id} for assets ${item.asset_1}/${item.asset_2}`);
+                console.log(`restorePairsTable - set row.dataset.id = ${item.id} for assets ${item.asset_1}/${item.asset_2}, error from DB: "${item.error}"`);
             }
         }
     });
@@ -1960,10 +1965,15 @@ async function syncPairs(rows){
             hit_price: r.hit_price!==''? parseFloat(r.hit_price): null,
             get_mdata: !!r.get_mdata,
             started: !!r.started,
-            error: r.error?.trim()||null,
+            error: r.error?.trim()||'',
         };
         const payloadClean = {};
-        Object.entries(payload).forEach(([k,v])=>{ if(v!==null && v!==undefined && v!=='') payloadClean[k]=v; });
+        Object.entries(payload).forEach(([k,v])=>{ 
+            // Поле error всегда отправляем (даже если пустое) для корректной очистки ошибок
+            if(k === 'error' || (v!==null && v!==undefined && v!=='')) {
+                payloadClean[k]=v; 
+            }
+        });
 
         if(r.id && serverById[r.id]){
             // UPDATE existing record by ID (handles strategy_name changes correctly)
