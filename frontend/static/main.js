@@ -1244,26 +1244,7 @@ document.getElementById('pairs_del').onclick = ()=>{
     pairsMenu.style.display='none';
 };
 
-function savePairsTable(){
-    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
-    const rows = Array.from(pairsTbody.rows).map(r=>{
-        return COLS.map(col=>{
-            const cell = cellById(r,col);
-            if(!cell) return '';
-            if(col.startsWith('side_')){
-                return cell.querySelector('select').value;
-            }
-            if(col==='get_mdata' || col==='started'){
-                return cell.querySelector('input').checked;
-            }
-            if(col==='reset'){
-                return '';
-            }
-            return cell.textContent;
-        });
-    });
-    localStorage.setItem('pairs_table', JSON.stringify(rows));
-}
+// Старое определение savePairsTable удалено - используется новое определение ниже
 
 function restorePairsTable(){
     const data = localStorage.getItem('pairs_table');
@@ -1779,10 +1760,8 @@ function savePairsTable(){
         return obj;
     });
     localStorage.setItem('pairs_table', JSON.stringify(rows));
-    syncPairs(rows.map(r=>{
-        // для совместимости с текущей syncPairs (ожидает массивы) отдадим как раньше
-        return [r.asset_1,r.asset_2,r.account_1,r.account_2,r.side_1,r.side_2,r.qty_ratio_1,r.qty_ratio_2,r.price_ratio_1,r.price_ratio_2,r.price,r.target_qty,r.exec_price,r.exec_qty,r.leaves_qty,r.strategy_name,r.price_1,r.price_2,r.hit_price,r.get_mdata,'',r.started,r.error];
-    }));
+    // Передаем объекты напрямую - syncPairs теперь работает с объектами
+    syncPairs(rows);
 }
 function savePairsOrder(){
     const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
@@ -1916,19 +1895,11 @@ async function syncPairs(rows){
     const serverByKey = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}|${p.strategy_name}`, p]));
     window._pairsIdMap = serverByKey; // для последующих шагов (ERR-2.2)
 
-    // Извлекаем id из строк DOM для правильной синхронизации
-    const rowsWithId = [];
-    const pairsTbody = document.querySelector('#pairs_table tbody');
-    Array.from(pairsTbody.rows).forEach((tr, index) => {
-        if (index < rows.length) {
-            const rowId = tr.dataset.id ? parseInt(tr.dataset.id, 10) : null;
-            rowsWithId.push({ data: rows[index], id: rowId });
-        }
-    });
-
+    // rows теперь уже объекты с id из savePairsTable
+    const uiIds = new Set(rows.filter(r => r.id).map(r => r.id));
+    const uiKeys = new Set(rows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
+    
     // --- DELETE pairs that were removed on UI ---
-    const uiIds = new Set(rowsWithId.filter(r => r.id).map(r => r.id));
-    const uiKeys = new Set(rowsWithId.map(r=>`${r.data[0]?.trim()}|${r.data[1]?.trim()}|${r.data[15]?.trim()}`));
     for(const [serverId, serverPair] of Object.entries(serverById)){
         const serverKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
         // Удаляем только если нет ни id, ни ключа в UI
@@ -1944,51 +1915,51 @@ async function syncPairs(rows){
     }
 
     // --- CREATE / UPDATE current rows ---
-    for(let i = 0; i < rowsWithId.length; i++){
-        const { data: r, id: rowId } = rowsWithId[i];
-        const a1 = r[0]?.trim();
-        const a2 = r[1]?.trim();
+    const pairsTbody = document.querySelector('#pairs_table tbody');
+    for(let i = 0; i < rows.length; i++){
+        const r = rows[i];
+        const a1 = r.asset_1?.trim();
+        const a2 = r.asset_2?.trim();
         if(!a1||!a2) continue;
         
-        const sname = r[15]?.trim(); // strategy_name
         const payload = {
             asset_1: a1,
             asset_2: a2,
-            account_1: r[2]?.trim()||null,
-            account_2: r[3]?.trim()||null,
-            side_1: r[4]||null,
-            side_2: r[5]||null,
-            qty_ratio_1: r[6]!==''? parseFloat(r[6]): null,
-            qty_ratio_2: r[7]!==''? parseFloat(r[7]): null,
-            price_ratio_1: r[8]!==''? parseFloat(r[8]): null,
-            price_ratio_2: r[9]!==''? parseFloat(r[9]): null,
-            price: r[10]!==''? parseFloat(r[10]): null,
-            target_qty: r[11]!==''? parseInt(r[11]): null,
-            exec_price: r[12]!==''? parseFloat(r[12]): null,
-            exec_qty: r[13]!==''? parseInt(r[13]): 0,
-            leaves_qty: r[14]!==''? parseInt(r[14]): null,
-            strategy_name: sname||null,
-            price_1: r[16]!==''? parseFloat(r[16]): null,
-            price_2: r[17]!==''? parseFloat(r[17]): null,
-            hit_price: r[18]!==''? parseFloat(r[18]): null,
-            get_mdata: !!r[19],
-            started: !!r[21],
-            error: r[22]?.trim()||null,
+            account_1: r.account_1?.trim()||null,
+            account_2: r.account_2?.trim()||null,
+            side_1: r.side_1||null,
+            side_2: r.side_2||null,
+            qty_ratio_1: r.qty_ratio_1!==''? parseFloat(r.qty_ratio_1): null,
+            qty_ratio_2: r.qty_ratio_2!==''? parseFloat(r.qty_ratio_2): null,
+            price_ratio_1: r.price_ratio_1!==''? parseFloat(r.price_ratio_1): null,
+            price_ratio_2: r.price_ratio_2!==''? parseFloat(r.price_ratio_2): null,
+            price: r.price!==''? parseFloat(r.price): null,
+            target_qty: r.target_qty!==''? parseInt(r.target_qty): null,
+            exec_price: r.exec_price!==''? parseFloat(r.exec_price): null,
+            exec_qty: r.exec_qty!==''? parseInt(r.exec_qty): 0,
+            leaves_qty: r.leaves_qty!==''? parseInt(r.leaves_qty): null,
+            strategy_name: r.strategy_name?.trim()||null,
+            price_1: r.price_1!==''? parseFloat(r.price_1): null,
+            price_2: r.price_2!==''? parseFloat(r.price_2): null,
+            hit_price: r.hit_price!==''? parseFloat(r.hit_price): null,
+            get_mdata: !!r.get_mdata,
+            started: !!r.started,
+            error: r.error?.trim()||null,
         };
         const payloadClean = {};
         Object.entries(payload).forEach(([k,v])=>{ if(v!==null && v!==undefined && v!=='') payloadClean[k]=v; });
 
-        if(rowId && serverById[rowId]){
+        if(r.id && serverById[r.id]){
             // UPDATE existing record by ID (handles strategy_name changes correctly)
-            const serverPair = serverById[rowId];
+            const serverPair = serverById[r.id];
             const hdr = serverPair.updated_at ? {'If-Unmodified-Since': serverPair.updated_at}: {};
-            const patched = await patchJson(`${API_BASE}/pairs/${rowId}`, payloadClean, hdr);
+            const patched = await patchJson(`${API_BASE}/pairs/${r.id}`, payloadClean, hdr);
             if(patched) {
                 // Update caches
-                serverById[rowId] = patched;
+                serverById[r.id] = patched;
                 // Remove old key and add new key
                 const oldKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
-                const newKey = `${a1}|${a2}|${sname}`;
+                const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
                 delete serverByKey[oldKey];
                 serverByKey[newKey] = patched;
             }
@@ -1998,13 +1969,14 @@ async function syncPairs(rows){
             const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
             if(created && created.id){ 
                 serverById[created.id] = created;
-                const newKey = `${a1}|${a2}|${sname}`;
+                const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
                 serverByKey[newKey] = created;
                 
-                // Update DOM with new ID
+                // Update DOM with new ID and update the row object
                 if(pairsTbody.rows[i]) {
                     pairsTbody.rows[i].dataset.id = String(created.id);
                 }
+                rows[i].id = created.id; // Update the row object too
             }
         }
     }
