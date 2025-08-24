@@ -124,6 +124,10 @@ class PairBase(BaseModel):
 
     error: Optional[str] = None
 
+    # Market data timestamps
+    md_dt_1: Optional[datetime] = None
+    md_dt_2: Optional[datetime] = None
+
 
 class PairCreate(BaseModel):
     asset_1: Optional[str] = None
@@ -148,6 +152,8 @@ class PairCreate(BaseModel):
     get_mdata: Optional[bool] = None
     started: Optional[bool] = None
     error: Optional[str] = None
+    md_dt_1: Optional[datetime] = None
+    md_dt_2: Optional[datetime] = None
 
 
 class PairRead(PairBase):
@@ -178,6 +184,8 @@ class PairUpdate(BaseModel):
     get_mdata: Optional[bool] = None
     started: Optional[bool] = None
     error: Optional[str] = None
+    md_dt_1: Optional[datetime] = None
+    md_dt_2: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------

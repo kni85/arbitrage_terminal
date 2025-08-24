@@ -135,6 +135,10 @@ class Pair(Base):
 
     error: Mapped[str | None] = mapped_column(String(256))
 
+    # Market data timestamps for quote staleness tracking
+    md_dt_1: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    md_dt_2: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self) -> str:  # noqa: D401

@@ -1128,10 +1128,12 @@ function addPairsRow(data){
             case 'strategy_name': td = makeEditable(data?data[15]:''); break;
             case 'price_1': td = document.createElement('td'); td.textContent = data? data[16]||'' : ''; break;
             case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; break;
+            case 'md_dt_1': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; td.style.fontSize = '11px'; break;
+            case 'md_dt_2': td = document.createElement('td'); td.textContent = data? data[19]||'' : ''; td.style.fontSize = '11px'; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[20]||'' : ''; break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[19] : false; td.appendChild(cb);
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[21] : false; td.appendChild(cb);
                 break;
             case 'reset':
                 td = document.createElement('td');
@@ -1193,7 +1195,7 @@ function addPairsRow(data){
                 break;
             case 'started':
                 td = document.createElement('td');
-                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[21] : false; td.appendChild(chk);
+                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[23] : false; td.appendChild(chk);
                 chk.addEventListener('change', ()=>{
                     if(chk.checked){
                         // включаем торговлю: очищаем ошибку и сбрасываем внутренние флаги
@@ -1206,7 +1208,7 @@ function addPairsRow(data){
                     savePairsTable();
                 });
                 break;
-            case 'error': td = document.createElement('td'); td.textContent = data? data[22]||'' : ''; break;
+            case 'error': td = document.createElement('td'); td.textContent = data? data[24]||'' : ''; break;
             default:
                 td = document.createElement('td');
         }
@@ -1286,7 +1288,9 @@ function restorePairsTable(){
                 item.asset_1||'', item.asset_2||'', item.account_1||'', item.account_2||'', item.side_1||'BUY', item.side_2||'BUY',
                 String(item.qty_ratio_1??''), String(item.qty_ratio_2??''), String(item.price_ratio_1??''), String(item.price_ratio_2??''), String(item.price??''),
                 String(item.target_qty??''), String(item.exec_price??''), String(item.exec_qty??'0'), String(item.leaves_qty??''), item.strategy_name||'',
-                String(item.price_1??''), String(item.price_2??''), String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
+                String(item.price_1??''), String(item.price_2??''), 
+                formatTimestamp(item.md_dt_1), formatTimestamp(item.md_dt_2),
+                String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
             ];
             const r = addPairsRow(arr);
             if(item.id) {
@@ -1398,9 +1402,24 @@ function connectAsset(row, idx, cfg){
         const msg = JSON.parse(ev.data);
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
-            cellById(row, idx===1? 'price_1':'price_2').textContent = price ? price.toFixed(decimals): '';
+            const priceCell = cellById(row, idx===1? 'price_1':'price_2');
+            priceCell.textContent = price ? price.toFixed(decimals): '';
+            
+            // Update market data timestamp
+            const mdDtCell = cellById(row, idx===1? 'md_dt_1':'md_dt_2');
+            const timestamp = msg.time || new Date().toISOString();
+            mdDtCell.textContent = formatTimestamp(timestamp);
+            
+            // Store timestamp for DB sync
+            if (idx === 1) {
+                row._md_dt_1 = timestamp;
+            } else {
+                row._md_dt_2 = timestamp;
+            }
+            
             updateHitPrice(row);
             checkRowForTrade(row);
+            savePairsTable(); // Save updated timestamp to DB
         }
     };
     ws.onclose = ()=>{
@@ -1742,6 +1761,25 @@ async function backendSync(){
 }
 // ---------------------------------------------------------------------
 
+// ----- format functions ---------------------------------------------
+function formatTimestamp(isoString) {
+    if (!isoString) return '';
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleString('sv-SE', { 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit', 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit', 
+            fractionalSecondDigits: 3 
+        }).replace('T', ' ');
+    } catch (e) {
+        return isoString; // fallback to original string
+    }
+}
+
 // ----- patched save functions ---------------------------------------
 function saveAssetsTable(){
     const rows = Array.from(assetsTbody.rows).map(tr=>({
@@ -1767,7 +1805,7 @@ function saveAccountsTable(){
     // syncAccounts(rows); // убрано - ensureRowPersisted уже синхронизирует данные с сервером
 }
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','hit_price','get_mdata','reset','started','error'];
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','hit_price','get_mdata','reset','started','error'];
     const rows = Array.from(pairsTbody.rows).map(tr=>{
         const obj = { id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null };
         COLS.forEach(col=>{
@@ -1776,6 +1814,16 @@ function savePairsTable(){
             if(col.startsWith('side_')){ obj[col] = cell.querySelector('select').value; return; }
             if(col==='get_mdata'||col==='started'){ obj[col] = cell.querySelector('input').checked; return; }
             if(col==='reset'){ obj[col] = ''; return; }
+            if(col==='md_dt_1'){ 
+                // Use stored timestamp from WebSocket or fallback to cell text
+                obj[col] = tr._md_dt_1 || (cell.textContent.trim() || null); 
+                return; 
+            }
+            if(col==='md_dt_2'){ 
+                // Use stored timestamp from WebSocket or fallback to cell text
+                obj[col] = tr._md_dt_2 || (cell.textContent.trim() || null); 
+                return; 
+            }
             obj[col] = cell.textContent;
         });
         return obj;
