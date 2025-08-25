@@ -96,6 +96,25 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             elif action == "send_order":
                 resp = await actions.send_order(msg, broker=broker)
                 await send_json_safe({"type": "order_reply", "data": resp})
+            elif action == "force_quote":
+                # Force quote request for stale market data
+                class_code_raw = msg.get("class_code")
+                sec_code_raw = msg.get("sec_code")
+                
+                if not class_code_raw or not sec_code_raw:
+                    await send_json_safe({"type": "error", "message": "Missing class_code or sec_code for force_quote"})
+                    continue
+                    
+                class_code = class_code_raw.strip()
+                sec_code = sec_code_raw.strip()
+                
+                if not class_code or not sec_code:
+                    await send_json_safe({"type": "error", "message": "Empty class_code or sec_code for force_quote"})
+                    continue
+                
+                # Request fresh quote data
+                actions.force_quote_request(class_code, sec_code, quote_callback, broker=broker)
+                logger.info(f"Force quote request sent for {class_code}.{sec_code}")
             else:
                 await send_json_safe({"type": "error", "message": f"Unknown action: {action}"})
     except WebSocketDisconnect:

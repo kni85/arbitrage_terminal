@@ -139,3 +139,31 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         return ok, msg_text
     except Exception as exc:  # pragma: no cover
         return False, str(exc)
+
+
+def force_quote_request(class_code: str, sec_code: str, callback, broker=None):
+    """
+    Принудительный запрос актуальных котировок для инструмента.
+    Используется когда данные устарели.
+    """
+    try:
+        if not broker:
+            broker = container.broker()
+        
+        # Запрашиваем свежие данные через QUIK
+        # Это может быть реализовано как:
+        # 1. Переподписка на котировки
+        # 2. Прямой запрос текущих цен
+        # 3. Запрос стакана
+        
+        logger.info(f"Requesting fresh quotes for {class_code}.{sec_code}")
+        
+        # Для начала просто переподпишемся на котировки
+        # что должно вызвать обновление данных
+        broker.unsubscribe_quotes(class_code, sec_code, callback)
+        broker.subscribe_quotes(class_code, sec_code, callback)
+        
+        logger.info(f"Resubscribed to quotes for {class_code}.{sec_code}")
+        
+    except Exception as e:
+        logger.exception(f"Error in force_quote_request for {class_code}.{sec_code}: {e}")

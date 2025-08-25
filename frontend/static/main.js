@@ -1130,10 +1130,13 @@ function addPairsRow(data){
             case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
             case 'md_dt_1': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; td.style.fontSize = '11px'; break;
             case 'md_dt_2': td = document.createElement('td'); td.textContent = data? data[19]||'' : ''; td.style.fontSize = '11px'; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[20]||'' : ''; break;
+            case 'max_md_delay_1': td = makeEditable(data?data[20]:''); break;
+            case 'max_md_delay_2': td = makeEditable(data?data[21]:''); break;
+            case 'md_delay_flag': td = document.createElement('td'); td.textContent = data? data[22]||'' : ''; td.style.color = 'red'; td.style.fontWeight = 'bold'; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[23]||'' : ''; break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[21] : false; td.appendChild(cb);
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[24] : false; td.appendChild(cb);
                 break;
             case 'reset':
                 td = document.createElement('td');
@@ -1195,7 +1198,7 @@ function addPairsRow(data){
                 break;
             case 'started':
                 td = document.createElement('td');
-                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[23] : false; td.appendChild(chk);
+                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[25] : false; td.appendChild(chk);
                 chk.addEventListener('change', ()=>{
                     if(chk.checked){
                         // включаем торговлю: очищаем ошибку и сбрасываем внутренние флаги
@@ -1208,7 +1211,7 @@ function addPairsRow(data){
                     savePairsTable();
                 });
                 break;
-            case 'error': td = document.createElement('td'); td.textContent = data? data[24]||'' : ''; break;
+            case 'error': td = document.createElement('td'); td.textContent = data? data[26]||'' : ''; break;
             default:
                 td = document.createElement('td');
         }
@@ -1290,6 +1293,7 @@ function restorePairsTable(){
                 String(item.target_qty??''), String(item.exec_price??''), String(item.exec_qty??'0'), String(item.leaves_qty??''), item.strategy_name||'',
                 String(item.price_1??''), String(item.price_2??''), 
                 formatTimestamp(item.md_dt_1), formatTimestamp(item.md_dt_2),
+                String(item.max_md_delay_1??''), String(item.max_md_delay_2??''), item.md_delay_flag||'',
                 String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
             ];
             const r = addPairsRow(arr);
@@ -1805,7 +1809,7 @@ function saveAccountsTable(){
     // syncAccounts(rows); // убрано - ensureRowPersisted уже синхронизирует данные с сервером
 }
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','hit_price','get_mdata','reset','started','error'];
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','max_md_delay_1','max_md_delay_2','md_delay_flag','hit_price','get_mdata','reset','started','error'];
     const rows = Array.from(pairsTbody.rows).map(tr=>{
         const obj = { id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null };
         COLS.forEach(col=>{
@@ -2060,6 +2064,128 @@ async function syncPairs(rows){
 }
 
 // Заменяем старый обработчик загрузки на async для синхронизации с сервером
+// Market data staleness checker
+let stalenessCheckInterval;
+
+function checkMarketDataStaleness() {
+    const now = Date.now();
+    
+    Array.from(pairsTbody.rows).forEach(row => {
+        const maxDelay1Cell = cellById(row, 'max_md_delay_1');
+        const maxDelay2Cell = cellById(row, 'max_md_delay_2');
+        const flagCell = cellById(row, 'md_delay_flag');
+        
+        if (!maxDelay1Cell || !maxDelay2Cell || !flagCell) return;
+        
+        const maxDelay1 = parseInt(maxDelay1Cell.textContent) || 0;
+        const maxDelay2 = parseInt(maxDelay2Cell.textContent) || 0;
+        
+        // Skip if no delays configured
+        if (maxDelay1 === 0 && maxDelay2 === 0) return;
+        
+        let isStale = false;
+        
+        // Check leg 1
+        if (maxDelay1 > 0 && row._md_dt_1) {
+            const mdTime1 = new Date(row._md_dt_1).getTime();
+            const delay1 = now - mdTime1;
+            if (delay1 > maxDelay1) {
+                isStale = true;
+                console.log(`Market data stale for leg 1: delay=${delay1}ms > max=${maxDelay1}ms`);
+            }
+        }
+        
+        // Check leg 2
+        if (maxDelay2 > 0 && row._md_dt_2) {
+            const mdTime2 = new Date(row._md_dt_2).getTime();
+            const delay2 = now - mdTime2;
+            if (delay2 > maxDelay2) {
+                isStale = true;
+                console.log(`Market data stale for leg 2: delay=${delay2}ms > max=${maxDelay2}ms`);
+            }
+        }
+        
+        const currentFlag = flagCell.textContent.trim();
+        
+        if (isStale && currentFlag !== 'alert') {
+            // Set alert flag
+            flagCell.textContent = 'alert';
+            console.log('Setting md_delay_flag to alert for stale data');
+            
+            // Force quote request
+            forceQuoteRequest(row);
+            
+            // Save to database
+            savePairsTable();
+        } else if (!isStale && currentFlag === 'alert') {
+            // Clear alert flag
+            flagCell.textContent = '';
+            console.log('Clearing md_delay_flag - data is fresh');
+            
+            // Save to database
+            savePairsTable();
+        }
+    });
+}
+
+function forceQuoteRequest(row) {
+    const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
+    const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
+    
+    if (!asset1 && !asset2) return;
+    
+    console.log(`Force quote request for assets: ${asset1}, ${asset2}`);
+    
+    // Request fresh quotes via WebSocket
+    if (asset1 && window._assetIdMap && window._assetIdMap[asset1]) {
+        const asset1Data = window._assetIdMap[asset1];
+        if (asset1Data.class_code && asset1Data.sec_code) {
+            const msg = {
+                action: 'force_quote',
+                class_code: asset1Data.class_code,
+                sec_code: asset1Data.sec_code
+            };
+            if (window.wsQuotes && window.wsQuotes.readyState === WebSocket.OPEN) {
+                window.wsQuotes.send(JSON.stringify(msg));
+                console.log('Sent force quote request for leg 1:', msg);
+            }
+        }
+    }
+    
+    if (asset2 && window._assetIdMap && window._assetIdMap[asset2]) {
+        const asset2Data = window._assetIdMap[asset2];
+        if (asset2Data.class_code && asset2Data.sec_code) {
+            const msg = {
+                action: 'force_quote',
+                class_code: asset2Data.class_code,
+                sec_code: asset2Data.sec_code
+            };
+            if (window.wsQuotes && window.wsQuotes.readyState === WebSocket.OPEN) {
+                window.wsQuotes.send(JSON.stringify(msg));
+                console.log('Sent force quote request for leg 2:', msg);
+            }
+        }
+    }
+}
+
+function startStalenessCheck() {
+    if (stalenessCheckInterval) {
+        clearInterval(stalenessCheckInterval);
+    }
+    
+    // Check every second
+    stalenessCheckInterval = setInterval(checkMarketDataStaleness, 1000);
+    console.log('Started market data staleness check (1s interval)');
+}
+
+function stopStalenessCheck() {
+    if (stalenessCheckInterval) {
+        clearInterval(stalenessCheckInterval);
+        stalenessCheckInterval = null;
+        console.log('Stopped market data staleness check');
+    }
+}
+
 window.addEventListener('load', async ()=>{
     await backendSync();
     restoreFields();
@@ -2071,6 +2197,9 @@ window.addEventListener('load', async ()=>{
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
+    
+    // Start market data staleness checking
+    startStalenessCheck();
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)

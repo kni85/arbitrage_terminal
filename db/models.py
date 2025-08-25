@@ -138,6 +138,11 @@ class Pair(Base):
     # Market data timestamps for quote staleness tracking
     md_dt_1: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     md_dt_2: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    # Market data delay settings and flag (in milliseconds)
+    max_md_delay_1: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_md_delay_2: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    md_delay_flag: Mapped[str | None] = mapped_column(String(16), nullable=True)  # 'alert' or null
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

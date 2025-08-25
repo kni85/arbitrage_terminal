@@ -127,6 +127,11 @@ class PairBase(BaseModel):
     # Market data timestamps
     md_dt_1: Optional[datetime] = None
     md_dt_2: Optional[datetime] = None
+    
+    # Market data delay settings and flag
+    max_md_delay_1: Optional[int] = None
+    max_md_delay_2: Optional[int] = None
+    md_delay_flag: Optional[str] = None
 
 
 class PairCreate(BaseModel):
@@ -154,6 +159,9 @@ class PairCreate(BaseModel):
     error: Optional[str] = None
     md_dt_1: Optional[datetime] = None
     md_dt_2: Optional[datetime] = None
+    max_md_delay_1: Optional[int] = None
+    max_md_delay_2: Optional[int] = None
+    md_delay_flag: Optional[str] = None
 
 
 class PairRead(PairBase):
@@ -186,6 +194,9 @@ class PairUpdate(BaseModel):
     error: Optional[str] = None
     md_dt_1: Optional[datetime] = None
     md_dt_2: Optional[datetime] = None
+    max_md_delay_1: Optional[int] = None
+    max_md_delay_2: Optional[int] = None
+    md_delay_flag: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
