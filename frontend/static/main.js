@@ -1252,15 +1252,33 @@ document.getElementById('pairs_add').onclick = ()=>{
 };
 
 // Delete row via menu
-document.getElementById('pairs_del').onclick = ()=>{
+document.getElementById('pairs_del').onclick = async ()=>{
     if(currentPairRow){
         const id = currentPairRow.dataset && currentPairRow.dataset.id ? parseInt(currentPairRow.dataset.id,10): null;
-        if(id){ deleteJson(`${API_BASE}/pairs/${id}`); }
-        closeRowWs(currentPairRow);
-        removeRowFromLocalStorage('pairs', id, currentPairRow);
-        currentPairRow.parentNode.removeChild(currentPairRow);
+        const rowToDelete = currentPairRow;
+        
+        // Закрываем WebSocket соединения
+        closeRowWs(rowToDelete);
+        
+        // Помечаем строку как удаляемую, чтобы предотвратить синхронизацию
+        rowToDelete.dataset.deleting = 'true';
+        
+        // Удаляем из localStorage
+        removeRowFromLocalStorage('pairs', id, rowToDelete);
+        
+        // Удаляем из DOM
+        rowToDelete.parentNode.removeChild(rowToDelete);
         currentPairRow = null;
-        // savePairsTable(); // LS уже обновили точечно
+        
+        // Теперь синхронно удаляем с сервера (если есть id)
+        if(id){ 
+            try {
+                await deleteJson(`${API_BASE}/pairs/${id}`);
+                console.log(`Successfully deleted pair ${id} from server`);
+            } catch(e) {
+                console.warn(`Failed to delete pair ${id} from server:`, e);
+            }
+        }
     }
     pairsMenu.style.display='none';
 };
@@ -1810,7 +1828,7 @@ function saveAccountsTable(){
 }
 function savePairsTable(){
     const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','max_md_delay_1','max_md_delay_2','md_delay_flag','hit_price','get_mdata','reset','started','error'];
-    const rows = Array.from(pairsTbody.rows).map(tr=>{
+    const rows = Array.from(pairsTbody.rows).filter(tr => tr.dataset.deleting !== 'true').map(tr=>{
         const obj = { id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null };
         COLS.forEach(col=>{
             const cell = cellById(tr,col);
@@ -1968,9 +1986,18 @@ async function syncPairs(rows){
     const serverByKey = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}|${p.strategy_name}`, p]));
     window._pairsIdMap = serverByKey; // для последующих шагов (ERR-2.2)
 
-    // rows теперь уже объекты с id из savePairsTable
-    const uiIds = new Set(rows.filter(r => r.id).map(r => r.id));
-    const uiKeys = new Set(rows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
+    // Фильтруем строки - исключаем те, что помечены как удаляемые
+    const validRows = rows.filter(r => {
+        // Найдем соответствующую строку в DOM и проверим флаг deleting
+        const rowInDom = Array.from(pairsTbody.rows).find(tr => 
+            tr.dataset.id && parseInt(tr.dataset.id, 10) === r.id
+        );
+        return !rowInDom || rowInDom.dataset.deleting !== 'true';
+    });
+
+    // validRows теперь уже объекты с id из savePairsTable без удаляемых
+    const uiIds = new Set(validRows.filter(r => r.id).map(r => r.id));
+    const uiKeys = new Set(validRows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
     
     // --- DELETE pairs that were removed on UI ---
     for(const [serverId, serverPair] of Object.entries(serverById)){
@@ -1989,8 +2016,8 @@ async function syncPairs(rows){
 
     // --- CREATE / UPDATE current rows ---
     const pairsTbody = document.querySelector('#pairs_table tbody');
-    for(let i = 0; i < rows.length; i++){
-        const r = rows[i];
+    for(let i = 0; i < validRows.length; i++){
+        const r = validRows[i];
         const a1 = r.asset_1?.trim();
         const a2 = r.asset_2?.trim();
         if(!a1||!a2) continue;
@@ -2205,6 +2232,12 @@ window.addEventListener('load', async ()=>{
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
 async function ensureRowPersisted(tableType, tr){
     if(!tr) return;
+    
+    // Пропускаем строки помеченные как удаляемые
+    if(tr.dataset.deleting === 'true') {
+        console.log(`[ensureRowPersisted] Skipping deleted ${tableType} row`);
+        return;
+    }
     
     // Защита от повторных вызовов
     if(tr.dataset.persisting === 'true') {
