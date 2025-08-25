@@ -46,7 +46,10 @@ let ws = null;
                 
                 // Обновляем md_dt для всех строк с этим активом
                 if (msg.class_code && msg.sec_code && msg.time) {
+                    console.log(`[${prefix}] Received quote for ${msg.class_code}.${msg.sec_code}, time: ${msg.time}`);
                     updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
+                } else {
+                    console.log(`[${prefix}] Quote missing data:`, {class_code: msg.class_code, sec_code: msg.sec_code, time: msg.time});
                 }
             }
         };
@@ -1798,6 +1801,11 @@ function formatTimestamp(isoString) {
     if (!isoString) return '';
     try {
         const date = new Date(isoString);
+        // Проверяем что дата валидна
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid timestamp:', isoString);
+            return '';
+        }
         return date.toLocaleString('sv-SE', { 
             year: 'numeric', 
             month: '2-digit', 
@@ -1808,7 +1816,8 @@ function formatTimestamp(isoString) {
             fractionalSecondDigits: 3 
         }).replace('T', ' ');
     } catch (e) {
-        return isoString; // fallback to original string
+        console.warn('Error formatting timestamp:', isoString, e);
+        return ''; // возвращаем пустую строку вместо невалидного значения
     }
 }
 
@@ -2171,14 +2180,24 @@ function checkMarketDataStaleness() {
 
 // Глобальная функция для обновления md_dt по class_code/sec_code
 function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
-    if (!class_code || !sec_code || !timestamp) return;
+    console.log(`updateMarketDataTimestamp called: ${class_code}.${sec_code}, timestamp: ${timestamp}`);
+    
+    if (!class_code || !sec_code || !timestamp) {
+        console.log('Missing required parameters for updateMarketDataTimestamp');
+        return;
+    }
     
     // Найти актив по class_code/sec_code
     const asset = Object.values(window._assetIdMap || {}).find(a => 
         a.class_code === class_code && a.sec_code === sec_code
     );
     
-    if (!asset || !asset.code) return;
+    if (!asset || !asset.code) {
+        console.log(`No asset found for ${class_code}.${sec_code}. Available assets:`, Object.keys(window._assetIdMap || {}));
+        return;
+    }
+    
+    console.log(`Found asset: ${asset.code} for ${class_code}.${sec_code}`);
     
     // Найти все строки с этим активом и обновить соответствующие md_dt
     Array.from(pairsTbody.rows).forEach(row => {
@@ -2260,8 +2279,8 @@ window.addEventListener('load', async ()=>{
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
     
-    // Start market data staleness checking - temporarily disabled to fix duplication issue
-    // startStalenessCheck();
+    // Start market data staleness checking
+    startStalenessCheck();
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
