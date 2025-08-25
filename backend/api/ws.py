@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -31,6 +32,10 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
     def quote_callback(data):
         bids_raw = data.get("bid") or data.get("bids") or data.get("bid_levels")
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
+        
+        # Получаем информацию об инструменте из данных
+        class_code = data.get("class_code") or data.get("classcode")
+        sec_code = data.get("sec_code") or data.get("seccode")
 
         def _to_list(raw, reverse=False):
             parsed = []
@@ -55,9 +60,24 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
 
         bids = _to_list(bids_raw, reverse=True)
         asks = _to_list(asks_raw, reverse=False)
+        # Всегда добавляем timestamp - либо из данных QUIK, либо текущее время
+        timestamp = data.get("time") or datetime.utcnow().isoformat()
+        
+        # Формируем ответ с котировками
+        response = {
+            "orderbook": {"bids": bids, "asks": asks}, 
+            "time": timestamp
+        }
+        
+        # Добавляем информацию об инструменте если есть
+        if class_code:
+            response["class_code"] = class_code
+        if sec_code:
+            response["sec_code"] = sec_code
+            
         loop.call_soon_threadsafe(
             asyncio.create_task,
-            send_json_safe({"orderbook": {"bids": bids, "asks": asks}, "time": data.get("time")}),
+            send_json_safe(response),
         )
 
     broker = container.broker()

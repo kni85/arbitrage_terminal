@@ -43,6 +43,11 @@ let ws = null;
             if (msg.orderbook) {
                 renderOrderbook(el('ob'), msg.orderbook);
                 recalc(prefix, msg.orderbook);
+                
+                // Обновляем md_dt для всех строк с этим активом
+                if (msg.class_code && msg.sec_code && msg.time) {
+                    updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
+                }
             }
         };
 
@@ -2164,6 +2169,44 @@ function checkMarketDataStaleness() {
     });
 }
 
+// Глобальная функция для обновления md_dt по class_code/sec_code
+function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
+    if (!class_code || !sec_code || !timestamp) return;
+    
+    // Найти актив по class_code/sec_code
+    const asset = Object.values(window._assetIdMap || {}).find(a => 
+        a.class_code === class_code && a.sec_code === sec_code
+    );
+    
+    if (!asset || !asset.code) return;
+    
+    // Найти все строки с этим активом и обновить соответствующие md_dt
+    Array.from(pairsTbody.rows).forEach(row => {
+        const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
+        const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
+        
+        if (asset1 === asset.code) {
+            // Обновляем md_dt_1
+            const mdDtCell = cellById(row, 'md_dt_1');
+            if (mdDtCell) {
+                mdDtCell.textContent = formatTimestamp(timestamp);
+                row._md_dt_1 = timestamp;
+                console.log(`Updated md_dt_1 for ${asset1}: ${formatTimestamp(timestamp)}`);
+            }
+        }
+        
+        if (asset2 === asset.code) {
+            // Обновляем md_dt_2
+            const mdDtCell = cellById(row, 'md_dt_2');
+            if (mdDtCell) {
+                mdDtCell.textContent = formatTimestamp(timestamp);
+                row._md_dt_2 = timestamp;
+                console.log(`Updated md_dt_2 for ${asset2}: ${formatTimestamp(timestamp)}`);
+            }
+        }
+    });
+}
+
 function forceQuoteRequest(row) {
     const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
     const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
@@ -2172,35 +2215,18 @@ function forceQuoteRequest(row) {
     
     console.log(`Force quote request for assets: ${asset1}, ${asset2}`);
     
-    // Request fresh quotes via WebSocket
+    // Используем существующие WebSocket соединения строки
+    // Принудительный запрос = переподписка через connectAsset
     if (asset1 && window._assetIdMap && window._assetIdMap[asset1]) {
-        const asset1Data = window._assetIdMap[asset1];
-        if (asset1Data.class_code && asset1Data.sec_code) {
-            const msg = {
-                action: 'force_quote',
-                class_code: asset1Data.class_code,
-                sec_code: asset1Data.sec_code
-            };
-            if (window.wsQuotes && window.wsQuotes.readyState === WebSocket.OPEN) {
-                window.wsQuotes.send(JSON.stringify(msg));
-                console.log('Sent force quote request for leg 1:', msg);
-            }
-        }
+        const cfg = window._assetIdMap[asset1];
+        // Переподключаем первый актив
+        connectAsset(row, 1, cfg);
     }
     
     if (asset2 && window._assetIdMap && window._assetIdMap[asset2]) {
-        const asset2Data = window._assetIdMap[asset2];
-        if (asset2Data.class_code && asset2Data.sec_code) {
-            const msg = {
-                action: 'force_quote',
-                class_code: asset2Data.class_code,
-                sec_code: asset2Data.sec_code
-            };
-            if (window.wsQuotes && window.wsQuotes.readyState === WebSocket.OPEN) {
-                window.wsQuotes.send(JSON.stringify(msg));
-                console.log('Sent force quote request for leg 2:', msg);
-            }
-        }
+        const cfg = window._assetIdMap[asset2];
+        // Переподключаем второй актив  
+        connectAsset(row, 2, cfg);
     }
 }
 
