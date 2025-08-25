@@ -1772,13 +1772,18 @@ async function backendSync(){
     // Pairs
     try{
         const server = await fetchJson(`${API_BASE}/pairs`);
-        if(server===null) throw new Error('no server');
-        // сохраняем как есть (включая id), даже если пусто
-        localStorage.setItem('pairs_table', JSON.stringify(server));
-        // build map asset1|asset2 -> pair object
-        window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
-        // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
-        window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
+        if(server!==null){
+            // build map asset1|asset2 -> pair object
+            window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
+            // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
+            window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
+            
+            // Если localStorage пуст, только тогда заполняем его данными с сервера
+            const localData = localStorage.getItem('pairs_table');
+            if(!localData || localData === '[]' || localData === 'null') {
+                localStorage.setItem('pairs_table', JSON.stringify(server));
+            }
+        }
     }catch(_){}
 }
 // ---------------------------------------------------------------------
@@ -1979,6 +1984,9 @@ async function syncSetting(key,value){
 }
 
 async function syncPairs(rows){
+    // Получаем ссылку на tbody в начале функции
+    const pairsTableBody = document.querySelector('#pairs_table tbody');
+    
     // Получаем список пар с сервера один раз – строим карту по id и по ключу
     let serverPairs = [];
     try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
@@ -1989,7 +1997,8 @@ async function syncPairs(rows){
     // Фильтруем строки - исключаем те, что помечены как удаляемые
     const validRows = rows.filter(r => {
         // Найдем соответствующую строку в DOM и проверим флаг deleting
-        const rowInDom = Array.from(pairsTbody.rows).find(tr => 
+        if (!pairsTableBody) return true; // Если нет tbody, не фильтруем
+        const rowInDom = Array.from(pairsTableBody.rows).find(tr => 
             tr.dataset.id && parseInt(tr.dataset.id, 10) === r.id
         );
         return !rowInDom || rowInDom.dataset.deleting !== 'true';
@@ -2015,7 +2024,7 @@ async function syncPairs(rows){
     }
 
     // --- CREATE / UPDATE current rows ---
-    const pairsTbody = document.querySelector('#pairs_table tbody');
+    // Используем уже полученную ссылку pairsTableBody
     for(let i = 0; i < validRows.length; i++){
         const r = validRows[i];
         const a1 = r.asset_1?.trim();
@@ -2078,8 +2087,8 @@ async function syncPairs(rows){
                 serverByKey[newKey] = created;
                 
                 // Update DOM with new ID and update the row object
-                if(pairsTbody.rows[i]) {
-                    pairsTbody.rows[i].dataset.id = String(created.id);
+                if(pairsTableBody && pairsTableBody.rows[i]) {
+                    pairsTableBody.rows[i].dataset.id = String(created.id);
                 }
                 rows[i].id = created.id; // Update the row object too
             }
