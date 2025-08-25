@@ -2115,15 +2115,15 @@ function checkMarketDataStaleness() {
             // Force quote request
             forceQuoteRequest(row);
             
-            // Save to database
-            savePairsTable();
+            // Save only this row's flag change, not all pairs
+            ensureRowPersisted('pairs', row);
         } else if (!isStale && currentFlag === 'alert') {
             // Clear alert flag
             flagCell.textContent = '';
             console.log('Clearing md_delay_flag - data is fresh');
             
-            // Save to database
-            savePairsTable();
+            // Save only this row's flag change, not all pairs
+            ensureRowPersisted('pairs', row);
         }
     });
 }
@@ -2198,8 +2198,8 @@ window.addEventListener('load', async ()=>{
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
     
-    // Start market data staleness checking
-    startStalenessCheck();
+    // Start market data staleness checking - temporarily disabled to fix duplication issue
+    // startStalenessCheck();
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
