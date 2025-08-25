@@ -60,8 +60,8 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
 
         bids = _to_list(bids_raw, reverse=True)
         asks = _to_list(asks_raw, reverse=False)
-        # Всегда добавляем timestamp - либо из данных QUIK, либо текущее время
-        timestamp = data.get("time") or datetime.utcnow().isoformat()
+        # Всегда добавляем timestamp - либо из данных QUIK, либо местное время
+        timestamp = data.get("time") or datetime.now().isoformat()
         
         # Формируем ответ с котировками
         response = {

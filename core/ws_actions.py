@@ -6,6 +6,7 @@ backend.api.ws только маршрутизировал сообщения.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any, Callable, Dict, Tuple
 
@@ -15,6 +16,8 @@ from core.broker import Broker
 from db.database import AsyncSessionLocal
 from backend.trading.order_service import get_next_trans_id
 from config import container
+
+logger = logging.getLogger(__name__)
 
 # Тип callback котировки
 QuoteCallback = Callable[[Dict[str, Any]], None]
@@ -159,8 +162,8 @@ def force_quote_request(class_code: str, sec_code: str, callback, broker=None):
             quote_data = broker._quik.get_quote_level2(class_code, sec_code)
             
             if quote_data and quote_data.get('result'):
-                # Добавляем временную метку для обновления md_dt
-                quote_data['time'] = datetime.utcnow().isoformat()
+                # Добавляем временную метку для обновления md_dt (используем местное время)
+                quote_data['time'] = datetime.now().isoformat()
                 quote_data['class_code'] = class_code
                 quote_data['sec_code'] = sec_code
                 quote_data['is_force_request'] = True
