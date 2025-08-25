@@ -1452,9 +1452,17 @@ function connectAsset(row, idx, cfg){
     };
     ws.onmessage = (ev)=>{
         const msg = JSON.parse(ev.data);
-        console.log(`[connectAsset] Received quote for asset ${idx}: ${cfg.classcode}.${cfg.seccode}, time: ${msg.time}`);
+        console.log(`[connectAsset] Received message for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`, msg);
+        
+        // Обработка ошибок от сервера
+        if(msg.type === 'error') {
+            console.error(`[connectAsset] Error for asset ${idx}: ${msg.message}`);
+            return;
+        }
         
         if(msg.orderbook){
+            console.log(`[connectAsset] Processing orderbook for asset ${idx}, time: ${msg.time}`);
+        
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
             priceCell.textContent = price ? price.toFixed(decimals): '';
@@ -1476,6 +1484,8 @@ function connectAsset(row, idx, cfg){
             updateHitPrice(row);
             checkRowForTrade(row);
             savePairsTable(); // Save updated timestamp to DB
+        } else {
+            console.warn(`[connectAsset] Message without orderbook for asset ${idx}:`, msg);
         }
     };
     ws.onclose = ()=>{
@@ -2187,16 +2197,24 @@ function checkMarketDataStaleness() {
         
         const currentFlag = flagCell.textContent.trim();
         
-        if (isStale && currentFlag !== 'alert') {
-            // Set alert flag
-            flagCell.textContent = 'alert';
-            console.log('Setting md_delay_flag to alert for stale data');
+        if (isStale) {
+            // Force quote request каждый раз при обнаружении устаревания
+            // Но не чаще чем раз в 5 секунд для одной строки
+            const lastForceRequest = row._lastForceQuoteRequest || 0;
+            const timeSinceLastRequest = now - lastForceRequest;
             
-            // Force quote request
-            forceQuoteRequest(row);
+            if (timeSinceLastRequest > 5000) { // 5 секунд между запросами
+                console.log('Sending force quote request for stale data');
+                forceQuoteRequest(row);
+                row._lastForceQuoteRequest = now;
+            }
             
-            // Save only this row's flag change, not all pairs
-            ensureRowPersisted('pairs', row);
+            // Set alert flag if not already set
+            if (currentFlag !== 'alert') {
+                flagCell.textContent = 'alert';
+                console.log('Setting md_delay_flag to alert');
+                ensureRowPersisted('pairs', row);
+            }
         } else if (!isStale && currentFlag === 'alert') {
             // Clear alert flag
             flagCell.textContent = '';
