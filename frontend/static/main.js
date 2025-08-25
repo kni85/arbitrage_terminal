@@ -1424,12 +1424,25 @@ function connectAsset(row, idx, cfg){
     const decimals = decimalsFromStep(cfg.price_step);
     if(!qty){ return; }
 
+    // Закрыть существующий WebSocket для этого индекса если есть
+    if (!row._ws) row._ws = {};
+    if (row._ws[idx]) {
+        try { row._ws[idx].close(); } catch(e) {}
+    }
+
     const ws = new WebSocket(`ws://${location.host}/ws`);
+    row._ws[idx] = ws; // Сохраняем для возможности закрытия
+    
+    console.log(`Connecting asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
+    
     ws.onopen = ()=>{
+        console.log(`WebSocket opened for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
         ws.send(JSON.stringify({action:'start', class_code:cfg.classcode, sec_code:cfg.seccode}));
     };
     ws.onmessage = (ev)=>{
         const msg = JSON.parse(ev.data);
+        console.log(`[connectAsset] Received quote for asset ${idx}: ${cfg.classcode}.${cfg.seccode}, time: ${msg.time}`);
+        
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
@@ -1443,8 +1456,10 @@ function connectAsset(row, idx, cfg){
             // Store timestamp for DB sync
             if (idx === 1) {
                 row._md_dt_1 = timestamp;
+                console.log(`Updated md_dt_1 for ${cfg.classcode}.${cfg.seccode}: ${timestamp}`);
             } else {
                 row._md_dt_2 = timestamp;
+                console.log(`Updated md_dt_2 for ${cfg.classcode}.${cfg.seccode}: ${timestamp}`);
             }
             
             updateHitPrice(row);
@@ -1453,9 +1468,13 @@ function connectAsset(row, idx, cfg){
         }
     };
     ws.onclose = ()=>{
+        console.log(`WebSocket closed for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
         // auto-reconnect if checkbox still checked
         if(cellById(row,'get_mdata').querySelector('input').checked){
+            console.log(`Auto-reconnecting asset ${idx} in 1 second`);
             setTimeout(()=> connectAsset(row, idx, cfg), 1000);
+        } else {
+            console.log(`Not reconnecting asset ${idx} - get_mdata unchecked`);
         }
     };
     ws.onerror = console.error;
@@ -2234,18 +2253,22 @@ function forceQuoteRequest(row) {
     
     console.log(`Force quote request for assets: ${asset1}, ${asset2}`);
     
-    // Используем существующие WebSocket соединения строки
-    // Принудительный запрос = переподписка через connectAsset
-    if (asset1 && window._assetIdMap && window._assetIdMap[asset1]) {
-        const cfg = window._assetIdMap[asset1];
-        // Переподключаем первый актив
-        connectAsset(row, 1, cfg);
+    // Используем lookupClassSec как в startRowFeeds
+    const cfg1 = asset1 ? lookupClassSec(asset1) : null;
+    const cfg2 = asset2 ? lookupClassSec(asset2) : null;
+    
+    if (cfg1) {
+        console.log(`Reconnecting asset1: ${asset1} (${cfg1.classcode}.${cfg1.seccode})`);
+        connectAsset(row, 1, cfg1);
+    } else if (asset1) {
+        console.warn(`Asset1 not found in lookup: ${asset1}`);
     }
     
-    if (asset2 && window._assetIdMap && window._assetIdMap[asset2]) {
-        const cfg = window._assetIdMap[asset2];
-        // Переподключаем второй актив  
-        connectAsset(row, 2, cfg);
+    if (cfg2) {
+        console.log(`Reconnecting asset2: ${asset2} (${cfg2.classcode}.${cfg2.seccode})`);
+        connectAsset(row, 2, cfg2);
+    } else if (asset2) {
+        console.warn(`Asset2 not found in lookup: ${asset2}`);
     }
 }
 
