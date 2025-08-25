@@ -163,6 +163,16 @@ let wsOrder = null;
 // Общий обработчик ответов от backend для одиночных и парных ордеров
 const handleWsOrderMessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    
+    // Обработка ответа от force_quote
+    if(msg.orderbook && (msg.is_force_request || msg.class_code)) {
+        console.log(`[force_quote] Received quote for ${msg.class_code}.${msg.sec_code}, time: ${msg.time}`);
+        
+        // Обновляем md_dt для всех строк с этим активом
+        updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
+        return;
+    }
+    
     if(msg.type==='order_reply'){
         document.getElementById('ord_result').textContent = JSON.stringify(msg,null,2);
         return;
@@ -209,6 +219,7 @@ const handleWsOrderMessage = (ev) => {
 function ensureWsOrderAndSend(payload){
     if(!wsOrder||wsOrder.readyState!==1){
         wsOrder = new WebSocket(`ws://${location.host}/ws`);
+        window.mainWs = wsOrder; // Сохраняем для использования в других местах
         wsOrder.onopen = () => wsOrder.send(JSON.stringify(payload));
         wsOrder.onmessage = handleWsOrderMessage;
         wsOrder.onerror = console.error;
@@ -2257,16 +2268,33 @@ function forceQuoteRequest(row) {
     const cfg1 = asset1 ? lookupClassSec(asset1) : null;
     const cfg2 = asset2 ? lookupClassSec(asset2) : null;
     
+    // Отправляем запрос force_quote через основной WebSocket
     if (cfg1) {
-        console.log(`Reconnecting asset1: ${asset1} (${cfg1.classcode}.${cfg1.seccode})`);
-        connectAsset(row, 1, cfg1);
+        console.log(`Sending force_quote for asset1: ${asset1} (${cfg1.classcode}.${cfg1.seccode})`);
+        if (window.mainWs && window.mainWs.readyState === WebSocket.OPEN) {
+            window.mainWs.send(JSON.stringify({
+                action: 'force_quote',
+                class_code: cfg1.classcode,
+                sec_code: cfg1.seccode
+            }));
+        } else {
+            console.warn('Main WebSocket not available for force_quote');
+        }
     } else if (asset1) {
         console.warn(`Asset1 not found in lookup: ${asset1}`);
     }
     
     if (cfg2) {
-        console.log(`Reconnecting asset2: ${asset2} (${cfg2.classcode}.${cfg2.seccode})`);
-        connectAsset(row, 2, cfg2);
+        console.log(`Sending force_quote for asset2: ${asset2} (${cfg2.classcode}.${cfg2.seccode})`);
+        if (window.mainWs && window.mainWs.readyState === WebSocket.OPEN) {
+            window.mainWs.send(JSON.stringify({
+                action: 'force_quote',
+                class_code: cfg2.classcode,
+                sec_code: cfg2.seccode
+            }));
+        } else {
+            console.warn('Main WebSocket not available for force_quote');
+        }
     } else if (asset2) {
         console.warn(`Asset2 not found in lookup: ${asset2}`);
     }
@@ -2301,6 +2329,17 @@ window.addEventListener('load', async ()=>{
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
+    
+    // Создаем основной WebSocket для общения с сервером
+    if (!wsOrder || wsOrder.readyState !== 1) {
+        wsOrder = new WebSocket(`ws://${location.host}/ws`);
+        window.mainWs = wsOrder;
+        wsOrder.onmessage = handleWsOrderMessage;
+        wsOrder.onerror = console.error;
+        wsOrder.onopen = () => {
+            console.log('Main WebSocket connected');
+        };
+    }
     
     // Start market data staleness checking
     startStalenessCheck();
