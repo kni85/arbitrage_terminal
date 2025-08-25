@@ -169,7 +169,50 @@ const handleWsOrderMessage = (ev) => {
         console.log(`[force_quote] Received quote for ${msg.class_code}.${msg.sec_code}, time: ${msg.time}`);
         
         // Обновляем md_dt для всех строк с этим активом
-        updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
+        if (msg.class_code && msg.sec_code && msg.time) {
+            updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
+            
+            // Также обновляем цены в таблице
+            const asset = Object.values(window._assetIdMap || {}).find(a => 
+                a.class_code === msg.class_code && a.sec_code === msg.sec_code
+            );
+            
+            if (asset && asset.code) {
+                // Найти все строки с этим активом и обновить цены
+                Array.from(pairsTbody.rows).forEach(row => {
+                    const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
+                    const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
+                    
+                    if (asset1 === asset.code) {
+                        // Обновляем price_1
+                        const qty1 = parseFloat(cellById(row, 'qty_ratio_1')?.textContent) || 1;
+                        const side1 = cellById(row, 'side_1')?.textContent?.trim();
+                        const decimals1 = asset.decimals || 2;
+                        const price1 = calcAvgPrice(msg.orderbook, qty1, side1 === 'BUY');
+                        const priceCell1 = cellById(row, 'price_1');
+                        if (priceCell1) priceCell1.textContent = price1 ? price1.toFixed(decimals1) : '';
+                        
+                        updateHitPrice(row);
+                        checkRowForTrade(row);
+                    }
+                    
+                    if (asset2 === asset.code) {
+                        // Обновляем price_2
+                        const qty2 = parseFloat(cellById(row, 'qty_ratio_2')?.textContent) || 1;
+                        const side2 = cellById(row, 'side_2')?.textContent?.trim();
+                        const decimals2 = asset.decimals || 2;
+                        const price2 = calcAvgPrice(msg.orderbook, qty2, side2 === 'BUY');
+                        const priceCell2 = cellById(row, 'price_2');
+                        if (priceCell2) priceCell2.textContent = price2 ? price2.toFixed(decimals2) : '';
+                        
+                        updateHitPrice(row);
+                        checkRowForTrade(row);
+                    }
+                });
+                
+                savePairsTable();
+            }
+        }
         return;
     }
     
@@ -2241,7 +2284,7 @@ function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
     );
     
     if (!asset || !asset.code) {
-        console.log(`No asset found for ${class_code}.${sec_code}. Available assets:`, Object.keys(window._assetIdMap || {}));
+        console.log(`No asset found for ${class_code}.${sec_code}. Available assets:`, window._assetIdMap);
         return;
     }
     
@@ -2258,7 +2301,9 @@ function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
             if (mdDtCell) {
                 mdDtCell.textContent = formatTimestamp(timestamp);
                 row._md_dt_1 = timestamp;
-                console.log(`Updated md_dt_1 for ${asset1}: ${formatTimestamp(timestamp)}`);
+                console.log(`Updated md_dt_1 for ${asset1}: ${formatTimestamp(timestamp)}, raw: ${timestamp}`);
+                // Сохраняем в БД
+                ensureRowPersisted('pairs', row);
             }
         }
         
@@ -2268,7 +2313,9 @@ function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
             if (mdDtCell) {
                 mdDtCell.textContent = formatTimestamp(timestamp);
                 row._md_dt_2 = timestamp;
-                console.log(`Updated md_dt_2 for ${asset2}: ${formatTimestamp(timestamp)}`);
+                console.log(`Updated md_dt_2 for ${asset2}: ${formatTimestamp(timestamp)}, raw: ${timestamp}`);
+                // Сохраняем в БД
+                ensureRowPersisted('pairs', row);
             }
         }
     });
@@ -2282,6 +2329,26 @@ function forceQuoteRequest(row) {
     
     console.log(`Force quote request for assets: ${asset1}, ${asset2}`);
     
+    // Проверяем доступность WebSocket
+    if (!window.mainWs || window.mainWs.readyState !== WebSocket.OPEN) {
+        console.warn('Main WebSocket not available for force_quote, readyState:', window.mainWs?.readyState);
+        // Попробуем переподключиться
+        if (!window.mainWs || window.mainWs.readyState === WebSocket.CLOSED) {
+            console.log('Attempting to reconnect main WebSocket...');
+            const ws = new WebSocket(`ws://${location.host}/ws`);
+            window.mainWs = ws;
+            wsOrder = ws;
+            ws.onmessage = handleWsOrderMessage;
+            ws.onerror = console.error;
+            ws.onopen = () => {
+                console.log('Main WebSocket reconnected');
+                // Повторяем запрос после подключения
+                setTimeout(() => forceQuoteRequest(row), 100);
+            };
+        }
+        return;
+    }
+    
     // Используем lookupClassSec как в startRowFeeds
     const cfg1 = asset1 ? lookupClassSec(asset1) : null;
     const cfg2 = asset2 ? lookupClassSec(asset2) : null;
@@ -2289,30 +2356,24 @@ function forceQuoteRequest(row) {
     // Отправляем запрос force_quote через основной WebSocket
     if (cfg1) {
         console.log(`Sending force_quote for asset1: ${asset1} (${cfg1.classcode}.${cfg1.seccode})`);
-        if (window.mainWs && window.mainWs.readyState === WebSocket.OPEN) {
-            window.mainWs.send(JSON.stringify({
-                action: 'force_quote',
-                class_code: cfg1.classcode,
-                sec_code: cfg1.seccode
-            }));
-        } else {
-            console.warn('Main WebSocket not available for force_quote');
-        }
+        window.mainWs.send(JSON.stringify({
+            action: 'force_quote',
+            class_code: cfg1.classcode,
+            sec_code: cfg1.seccode
+        }));
+        console.log('Force quote request sent for asset1');
     } else if (asset1) {
         console.warn(`Asset1 not found in lookup: ${asset1}`);
     }
     
     if (cfg2) {
         console.log(`Sending force_quote for asset2: ${asset2} (${cfg2.classcode}.${cfg2.seccode})`);
-        if (window.mainWs && window.mainWs.readyState === WebSocket.OPEN) {
-            window.mainWs.send(JSON.stringify({
-                action: 'force_quote',
-                class_code: cfg2.classcode,
-                sec_code: cfg2.seccode
-            }));
-        } else {
-            console.warn('Main WebSocket not available for force_quote');
-        }
+        window.mainWs.send(JSON.stringify({
+            action: 'force_quote',
+            class_code: cfg2.classcode,
+            sec_code: cfg2.seccode
+        }));
+        console.log('Force quote request sent for asset2');
     } else if (asset2) {
         console.warn(`Asset2 not found in lookup: ${asset2}`);
     }
@@ -2348,19 +2409,36 @@ window.addEventListener('load', async ()=>{
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
     
-    // Создаем основной WebSocket для общения с сервером
-    if (!wsOrder || wsOrder.readyState !== 1) {
-        wsOrder = new WebSocket(`ws://${location.host}/ws`);
-        window.mainWs = wsOrder;
-        wsOrder.onmessage = handleWsOrderMessage;
-        wsOrder.onerror = console.error;
-        wsOrder.onopen = () => {
-            console.log('Main WebSocket connected');
-        };
+    // Создаем основной WebSocket для общения с сервером раньше всего
+    function ensureMainWebSocket() {
+        if (!wsOrder || wsOrder.readyState !== WebSocket.OPEN) {
+            wsOrder = new WebSocket(`ws://${location.host}/ws`);
+            window.mainWs = wsOrder;
+            wsOrder.onmessage = handleWsOrderMessage;
+            wsOrder.onerror = (e) => {
+                console.error('Main WebSocket error:', e);
+                // Переподключение через 1 секунду
+                setTimeout(ensureMainWebSocket, 1000);
+            };
+            wsOrder.onclose = () => {
+                console.log('Main WebSocket closed, reconnecting...');
+                window.mainWs = null;
+                // Переподключение через 1 секунду
+                setTimeout(ensureMainWebSocket, 1000);
+            };
+            wsOrder.onopen = () => {
+                console.log('Main WebSocket connected');
+                window.mainWs = wsOrder;
+            };
+        }
     }
     
-    // Start market data staleness checking
-    startStalenessCheck();
+    ensureMainWebSocket();
+    
+    // Start market data staleness checking после небольшой задержки
+    setTimeout(() => {
+        startStalenessCheck();
+    }, 500);
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
