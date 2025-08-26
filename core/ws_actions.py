@@ -6,8 +6,6 @@ backend.api.ws только маршрутизировал сообщения.
 from __future__ import annotations
 
 import asyncio
-import logging
-from datetime import datetime
 from typing import Any, Callable, Dict, Tuple
 
 from infra.quik_adapter import QuikBrokerAdapter
@@ -16,8 +14,6 @@ from core.broker import Broker
 from db.database import AsyncSessionLocal
 from backend.trading.order_service import get_next_trans_id
 from config import container
-
-logger = logging.getLogger(__name__)
 
 # Тип callback котировки
 QuoteCallback = Callable[[Dict[str, Any]], None]
@@ -143,41 +139,3 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         return ok, msg_text
     except Exception as exc:  # pragma: no cover
         return False, str(exc)
-
-
-def force_quote_request(class_code: str, sec_code: str, callback, broker=None):
-    """
-    Принудительный запрос актуальных котировок для инструмента.
-    Используется когда данные устарели.
-    """
-    try:
-        if not broker:
-            broker = container.broker()
-        
-        logger.info(f"Force requesting fresh quotes for {class_code}.{sec_code}")
-        
-        # Получаем текущий стакан напрямую из QUIK
-        # Это гарантирует получение актуальных данных даже если стакан не изменился
-        if hasattr(broker, '_quik') and broker._quik:
-            quote_data = broker._quik.get_quote_level2(class_code, sec_code)
-            
-            if quote_data and quote_data.get('result'):
-                # Добавляем временную метку для обновления md_dt (используем местное время)
-                quote_data['time'] = datetime.now().isoformat()
-                quote_data['class_code'] = class_code
-                quote_data['sec_code'] = sec_code
-                quote_data['is_force_request'] = True
-                
-                # Вызываем callback с полученными данными
-                callback(quote_data)
-                logger.info(f"Force quote received and processed for {class_code}.{sec_code}")
-            else:
-                logger.warning(f"Failed to get force quote for {class_code}.{sec_code}: {quote_data}")
-        else:
-            # Fallback: переподписка если прямой запрос недоступен
-            logger.warning(f"Direct quote request not available, resubscribing for {class_code}.{sec_code}")
-            broker.unsubscribe_quotes(class_code, sec_code, callback)
-            broker.subscribe_quotes(class_code, sec_code, callback)
-        
-    except Exception as e:
-        logger.exception(f"Error in force_quote_request for {class_code}.{sec_code}: {e}")

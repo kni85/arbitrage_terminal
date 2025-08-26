@@ -43,14 +43,6 @@ let ws = null;
             if (msg.orderbook) {
                 renderOrderbook(el('ob'), msg.orderbook);
                 recalc(prefix, msg.orderbook);
-                
-                // Обновляем md_dt для всех строк с этим активом
-                if (msg.class_code && msg.sec_code && msg.time) {
-                    console.log(`[${prefix}] Received quote for ${msg.class_code}.${msg.sec_code}, time: ${msg.time}`);
-                    updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
-                } else {
-                    console.log(`[${prefix}] Quote missing data:`, {class_code: msg.class_code, sec_code: msg.sec_code, time: msg.time});
-                }
             }
         };
 
@@ -163,59 +155,6 @@ let wsOrder = null;
 // Общий обработчик ответов от backend для одиночных и парных ордеров
 const handleWsOrderMessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    
-    // Обработка ответа от force_quote
-    if(msg.orderbook && (msg.is_force_request || msg.class_code)) {
-        console.log(`[force_quote] Received quote for ${msg.class_code}.${msg.sec_code}, time: ${msg.time}`);
-        
-        // Обновляем md_dt для всех строк с этим активом
-        if (msg.class_code && msg.sec_code && msg.time) {
-            updateMarketDataTimestamp(msg.class_code, msg.sec_code, msg.time);
-            
-            // Также обновляем цены в таблице
-            const asset = Object.values(window._assetIdMap || {}).find(a => 
-                a.class_code === msg.class_code && a.sec_code === msg.sec_code
-            );
-            
-            if (asset && asset.code) {
-                // Найти все строки с этим активом и обновить цены
-                Array.from(pairsTbody.rows).forEach(row => {
-                    const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
-                    const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
-                    
-                    if (asset1 === asset.code) {
-                        // Обновляем price_1
-                        const qty1 = parseFloat(cellById(row, 'qty_ratio_1')?.textContent) || 1;
-                        const side1 = cellById(row, 'side_1')?.textContent?.trim();
-                        const decimals1 = asset.decimals || 2;
-                        const price1 = calcAvgPrice(msg.orderbook, qty1, side1 === 'BUY');
-                        const priceCell1 = cellById(row, 'price_1');
-                        if (priceCell1) priceCell1.textContent = price1 ? price1.toFixed(decimals1) : '';
-                        
-                        updateHitPrice(row);
-                        checkRowForTrade(row);
-                    }
-                    
-                    if (asset2 === asset.code) {
-                        // Обновляем price_2
-                        const qty2 = parseFloat(cellById(row, 'qty_ratio_2')?.textContent) || 1;
-                        const side2 = cellById(row, 'side_2')?.textContent?.trim();
-                        const decimals2 = asset.decimals || 2;
-                        const price2 = calcAvgPrice(msg.orderbook, qty2, side2 === 'BUY');
-                        const priceCell2 = cellById(row, 'price_2');
-                        if (priceCell2) priceCell2.textContent = price2 ? price2.toFixed(decimals2) : '';
-                        
-                        updateHitPrice(row);
-                        checkRowForTrade(row);
-                    }
-                });
-                
-                savePairsTable();
-            }
-        }
-        return;
-    }
-    
     if(msg.type==='order_reply'){
         document.getElementById('ord_result').textContent = JSON.stringify(msg,null,2);
         return;
@@ -262,7 +201,6 @@ const handleWsOrderMessage = (ev) => {
 function ensureWsOrderAndSend(payload){
     if(!wsOrder||wsOrder.readyState!==1){
         wsOrder = new WebSocket(`ws://${location.host}/ws`);
-        window.mainWs = wsOrder; // Сохраняем для использования в других местах
         wsOrder.onopen = () => wsOrder.send(JSON.stringify(payload));
         wsOrder.onmessage = handleWsOrderMessage;
         wsOrder.onerror = console.error;
@@ -1192,13 +1130,10 @@ function addPairsRow(data){
             case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
             case 'md_dt_1': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; td.style.fontSize = '11px'; break;
             case 'md_dt_2': td = document.createElement('td'); td.textContent = data? data[19]||'' : ''; td.style.fontSize = '11px'; break;
-            case 'max_md_delay_1': td = makeEditable(data?data[20]:''); break;
-            case 'max_md_delay_2': td = makeEditable(data?data[21]:''); break;
-            case 'md_delay_flag': td = document.createElement('td'); td.textContent = data? data[22]||'' : ''; td.style.color = 'red'; td.style.fontWeight = 'bold'; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[23]||'' : ''; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[20]||'' : ''; break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[24] : false; td.appendChild(cb);
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[21] : false; td.appendChild(cb);
                 break;
             case 'reset':
                 td = document.createElement('td');
@@ -1260,7 +1195,7 @@ function addPairsRow(data){
                 break;
             case 'started':
                 td = document.createElement('td');
-                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[25] : false; td.appendChild(chk);
+                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[23] : false; td.appendChild(chk);
                 chk.addEventListener('change', ()=>{
                     if(chk.checked){
                         // включаем торговлю: очищаем ошибку и сбрасываем внутренние флаги
@@ -1273,7 +1208,7 @@ function addPairsRow(data){
                     savePairsTable();
                 });
                 break;
-            case 'error': td = document.createElement('td'); td.textContent = data? data[26]||'' : ''; break;
+            case 'error': td = document.createElement('td'); td.textContent = data? data[24]||'' : ''; break;
             default:
                 td = document.createElement('td');
         }
@@ -1291,32 +1226,6 @@ function addPairsRow(data){
 
     // initial hit price
     updateHitPrice(row);
-    
-    // Инициализируем _md_dt_1 и _md_dt_2 для новых строк
-    // Если есть значения в ячейках, используем их
-    const mdDt1Cell = cellById(row, 'md_dt_1');
-    const mdDt2Cell = cellById(row, 'md_dt_2');
-    if (mdDt1Cell) {
-        const mdDt1Text = mdDt1Cell.textContent.trim();
-        if (mdDt1Text && mdDt1Text !== 'Invalid Date') {
-            // Пытаемся восстановить ISO строку из форматированной даты
-            const date1 = new Date(mdDt1Text.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3})/, '$1-$2-$3T$4:$5:$6.$7'));
-            if (!isNaN(date1.getTime())) {
-                row._md_dt_1 = date1.toISOString();
-            }
-        }
-    }
-    if (mdDt2Cell) {
-        const mdDt2Text = mdDt2Cell.textContent.trim();
-        if (mdDt2Text && mdDt2Text !== 'Invalid Date') {
-            // Пытаемся восстановить ISO строку из форматированной даты
-            const date2 = new Date(mdDt2Text.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3})/, '$1-$2-$3T$4:$5:$6.$7'));
-            if (!isNaN(date2.getTime())) {
-                row._md_dt_2 = date2.toISOString();
-            }
-        }
-    }
-    
     return row;
 }
 
@@ -1340,33 +1249,15 @@ document.getElementById('pairs_add').onclick = ()=>{
 };
 
 // Delete row via menu
-document.getElementById('pairs_del').onclick = async ()=>{
+document.getElementById('pairs_del').onclick = ()=>{
     if(currentPairRow){
         const id = currentPairRow.dataset && currentPairRow.dataset.id ? parseInt(currentPairRow.dataset.id,10): null;
-        const rowToDelete = currentPairRow;
-        
-        // Закрываем WebSocket соединения
-        closeRowWs(rowToDelete);
-        
-        // Помечаем строку как удаляемую, чтобы предотвратить синхронизацию
-        rowToDelete.dataset.deleting = 'true';
-        
-        // Удаляем из localStorage
-        removeRowFromLocalStorage('pairs', id, rowToDelete);
-        
-        // Удаляем из DOM
-        rowToDelete.parentNode.removeChild(rowToDelete);
+        if(id){ deleteJson(`${API_BASE}/pairs/${id}`); }
+        closeRowWs(currentPairRow);
+        removeRowFromLocalStorage('pairs', id, currentPairRow);
+        currentPairRow.parentNode.removeChild(currentPairRow);
         currentPairRow = null;
-        
-        // Теперь синхронно удаляем с сервера (если есть id)
-        if(id){ 
-            try {
-                await deleteJson(`${API_BASE}/pairs/${id}`);
-                console.log(`Successfully deleted pair ${id} from server`);
-            } catch(e) {
-                console.warn(`Failed to delete pair ${id} from server:`, e);
-            }
-        }
+        // savePairsTable(); // LS уже обновили точечно
     }
     pairsMenu.style.display='none';
 };
@@ -1399,22 +1290,12 @@ function restorePairsTable(){
                 String(item.target_qty??''), String(item.exec_price??''), String(item.exec_qty??'0'), String(item.leaves_qty??''), item.strategy_name||'',
                 String(item.price_1??''), String(item.price_2??''), 
                 formatTimestamp(item.md_dt_1), formatTimestamp(item.md_dt_2),
-                String(item.max_md_delay_1??''), String(item.max_md_delay_2??''), item.md_delay_flag||'',
                 String(item.hit_price??''), !!item.get_mdata, '', !!item.started, item.error||''
             ];
             const r = addPairsRow(arr);
             if(item.id) {
                 r.dataset.id = String(item.id);
                 console.log(`restorePairsTable - set row.dataset.id = ${item.id} for assets ${item.asset_1}/${item.asset_2}, error from DB: "${item.error}"`);
-            }
-            // Инициализируем _md_dt_1 и _md_dt_2 для проверки устаревания
-            if (item.md_dt_1) {
-                r._md_dt_1 = item.md_dt_1;
-                console.log(`restorePairsTable - initialized row._md_dt_1 = ${item.md_dt_1}`);
-            }
-            if (item.md_dt_2) {
-                r._md_dt_2 = item.md_dt_2;
-                console.log(`restorePairsTable - initialized row._md_dt_2 = ${item.md_dt_2}`);
             }
         }
     });
@@ -1513,34 +1394,13 @@ function connectAsset(row, idx, cfg){
     const decimals = decimalsFromStep(cfg.price_step);
     if(!qty){ return; }
 
-    // Закрыть существующий WebSocket для этого индекса если есть
-    if (!row._ws) row._ws = {};
-    if (row._ws[idx]) {
-        try { row._ws[idx].close(); } catch(e) {}
-    }
-
     const ws = new WebSocket(`ws://${location.host}/ws`);
-    row._ws[idx] = ws; // Сохраняем для возможности закрытия
-    
-    console.log(`Connecting asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
-    
     ws.onopen = ()=>{
-        console.log(`WebSocket opened for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
         ws.send(JSON.stringify({action:'start', class_code:cfg.classcode, sec_code:cfg.seccode}));
     };
     ws.onmessage = (ev)=>{
         const msg = JSON.parse(ev.data);
-        console.log(`[connectAsset] Received message for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`, msg);
-        
-        // Обработка ошибок от сервера
-        if(msg.type === 'error') {
-            console.error(`[connectAsset] Error for asset ${idx}: ${msg.message}`);
-            return;
-        }
-        
         if(msg.orderbook){
-            console.log(`[connectAsset] Processing orderbook for asset ${idx}, time: ${msg.time}`);
-        
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
             priceCell.textContent = price ? price.toFixed(decimals): '';
@@ -1553,27 +1413,19 @@ function connectAsset(row, idx, cfg){
             // Store timestamp for DB sync
             if (idx === 1) {
                 row._md_dt_1 = timestamp;
-                console.log(`Updated md_dt_1 for ${cfg.classcode}.${cfg.seccode}: ${timestamp}`);
             } else {
                 row._md_dt_2 = timestamp;
-                console.log(`Updated md_dt_2 for ${cfg.classcode}.${cfg.seccode}: ${timestamp}`);
             }
             
             updateHitPrice(row);
             checkRowForTrade(row);
             savePairsTable(); // Save updated timestamp to DB
-        } else {
-            console.warn(`[connectAsset] Message without orderbook for asset ${idx}:`, msg);
         }
     };
     ws.onclose = ()=>{
-        console.log(`WebSocket closed for asset ${idx}: ${cfg.classcode}.${cfg.seccode}`);
         // auto-reconnect if checkbox still checked
         if(cellById(row,'get_mdata').querySelector('input').checked){
-            console.log(`Auto-reconnecting asset ${idx} in 1 second`);
             setTimeout(()=> connectAsset(row, idx, cfg), 1000);
-        } else {
-            console.log(`Not reconnecting asset ${idx} - get_mdata unchecked`);
         }
     };
     ws.onerror = console.error;
@@ -1898,18 +1750,13 @@ async function backendSync(){
     // Pairs
     try{
         const server = await fetchJson(`${API_BASE}/pairs`);
-        if(server!==null){
-            // build map asset1|asset2 -> pair object
-            window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
-            // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
-            window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
-            
-            // Если localStorage пуст, только тогда заполняем его данными с сервера
-            const localData = localStorage.getItem('pairs_table');
-            if(!localData || localData === '[]' || localData === 'null') {
-                localStorage.setItem('pairs_table', JSON.stringify(server));
-            }
-        }
+        if(server===null) throw new Error('no server');
+        // сохраняем как есть (включая id), даже если пусто
+        localStorage.setItem('pairs_table', JSON.stringify(server));
+        // build map asset1|asset2 -> pair object
+        window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
+        // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
+        window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
     }catch(_){}
 }
 // ---------------------------------------------------------------------
@@ -1919,11 +1766,6 @@ function formatTimestamp(isoString) {
     if (!isoString) return '';
     try {
         const date = new Date(isoString);
-        // Проверяем что дата валидна
-        if (isNaN(date.getTime())) {
-            console.warn('Invalid timestamp:', isoString);
-            return '';
-        }
         return date.toLocaleString('sv-SE', { 
             year: 'numeric', 
             month: '2-digit', 
@@ -1934,8 +1776,7 @@ function formatTimestamp(isoString) {
             fractionalSecondDigits: 3 
         }).replace('T', ' ');
     } catch (e) {
-        console.warn('Error formatting timestamp:', isoString, e);
-        return ''; // возвращаем пустую строку вместо невалидного значения
+        return isoString; // fallback to original string
     }
 }
 
@@ -1964,8 +1805,8 @@ function saveAccountsTable(){
     // syncAccounts(rows); // убрано - ensureRowPersisted уже синхронизирует данные с сервером
 }
 function savePairsTable(){
-    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','max_md_delay_1','max_md_delay_2','md_delay_flag','hit_price','get_mdata','reset','started','error'];
-    const rows = Array.from(pairsTbody.rows).filter(tr => tr.dataset.deleting !== 'true').map(tr=>{
+    const COLS = ['asset_1','asset_2','account_1','account_2','side_1','side_2','qty_ratio_1','qty_ratio_2','price_ratio_1','price_ratio_2','price','target_qty','exec_price','exec_qty','leaves_qty','strategy_name','price_1','price_2','md_dt_1','md_dt_2','hit_price','get_mdata','reset','started','error'];
+    const rows = Array.from(pairsTbody.rows).map(tr=>{
         const obj = { id: tr.dataset.id ? parseInt(tr.dataset.id,10) : null };
         COLS.forEach(col=>{
             const cell = cellById(tr,col);
@@ -2116,9 +1957,6 @@ async function syncSetting(key,value){
 }
 
 async function syncPairs(rows){
-    // Получаем ссылку на tbody в начале функции
-    const pairsTableBody = document.querySelector('#pairs_table tbody');
-    
     // Получаем список пар с сервера один раз – строим карту по id и по ключу
     let serverPairs = [];
     try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
@@ -2126,19 +1964,9 @@ async function syncPairs(rows){
     const serverByKey = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}|${p.strategy_name}`, p]));
     window._pairsIdMap = serverByKey; // для последующих шагов (ERR-2.2)
 
-    // Фильтруем строки - исключаем те, что помечены как удаляемые
-    const validRows = rows.filter(r => {
-        // Найдем соответствующую строку в DOM и проверим флаг deleting
-        if (!pairsTableBody) return true; // Если нет tbody, не фильтруем
-        const rowInDom = Array.from(pairsTableBody.rows).find(tr => 
-            tr.dataset.id && parseInt(tr.dataset.id, 10) === r.id
-        );
-        return !rowInDom || rowInDom.dataset.deleting !== 'true';
-    });
-
-    // validRows теперь уже объекты с id из savePairsTable без удаляемых
-    const uiIds = new Set(validRows.filter(r => r.id).map(r => r.id));
-    const uiKeys = new Set(validRows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
+    // rows теперь уже объекты с id из savePairsTable
+    const uiIds = new Set(rows.filter(r => r.id).map(r => r.id));
+    const uiKeys = new Set(rows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
     
     // --- DELETE pairs that were removed on UI ---
     for(const [serverId, serverPair] of Object.entries(serverById)){
@@ -2156,9 +1984,9 @@ async function syncPairs(rows){
     }
 
     // --- CREATE / UPDATE current rows ---
-    // Используем уже полученную ссылку pairsTableBody
-    for(let i = 0; i < validRows.length; i++){
-        const r = validRows[i];
+    const pairsTbody = document.querySelector('#pairs_table tbody');
+    for(let i = 0; i < rows.length; i++){
+        const r = rows[i];
         const a1 = r.asset_1?.trim();
         const a2 = r.asset_2?.trim();
         if(!a1||!a2) continue;
@@ -2219,8 +2047,8 @@ async function syncPairs(rows){
                 serverByKey[newKey] = created;
                 
                 // Update DOM with new ID and update the row object
-                if(pairsTableBody && pairsTableBody.rows[i]) {
-                    pairsTableBody.rows[i].dataset.id = String(created.id);
+                if(pairsTbody.rows[i]) {
+                    pairsTbody.rows[i].dataset.id = String(created.id);
                 }
                 rows[i].id = created.id; // Update the row object too
             }
@@ -2232,233 +2060,6 @@ async function syncPairs(rows){
 }
 
 // Заменяем старый обработчик загрузки на async для синхронизации с сервером
-// Market data staleness checker
-let stalenessCheckInterval;
-
-function checkMarketDataStaleness() {
-    const pairsTbody = document.querySelector('#pair_arbitrage tbody');
-    if (!pairsTbody) {
-        console.log('[checkMarketDataStaleness] No pairs tbody found');
-        return;
-    }
-    
-    const now = Date.now();
-    console.log(`[checkMarketDataStaleness] Checking ${pairsTbody.rows.length} rows at ${new Date(now).toISOString()}`);
-    
-    Array.from(pairsTbody.rows).forEach((row, idx) => {
-        const maxDelay1Cell = cellById(row, 'max_md_delay_1');
-        const maxDelay2Cell = cellById(row, 'max_md_delay_2');
-        const flagCell = cellById(row, 'md_delay_flag');
-        
-        if (!maxDelay1Cell || !maxDelay2Cell || !flagCell) {
-            console.log(`[checkMarketDataStaleness] Row ${idx}: Missing cells`);
-            return;
-        }
-        
-        const maxDelay1 = parseInt(maxDelay1Cell.textContent) || 0;
-        const maxDelay2 = parseInt(maxDelay2Cell.textContent) || 0;
-        
-        // Skip if no delays configured
-        if (maxDelay1 === 0 && maxDelay2 === 0) {
-            console.log(`[checkMarketDataStaleness] Row ${idx}: No delays configured`);
-            return;
-        }
-        
-        console.log(`[checkMarketDataStaleness] Row ${idx}: Checking with maxDelay1=${maxDelay1}, maxDelay2=${maxDelay2}, _md_dt_1=${row._md_dt_1}, _md_dt_2=${row._md_dt_2}`);
-        
-        let isStale = false;
-        
-        // Check leg 1
-        if (maxDelay1 > 0) {
-            if (row._md_dt_1) {
-                const mdTime1 = new Date(row._md_dt_1).getTime();
-                const delay1 = now - mdTime1;
-                if (delay1 > maxDelay1) {
-                    isStale = true;
-                    console.log(`Market data stale for leg 1: delay=${delay1}ms > max=${maxDelay1}ms`);
-                }
-            } else {
-                // Если нет timestamp вообще, считаем данные устаревшими
-                isStale = true;
-                console.log(`Market data stale for leg 1: no timestamp available (row._md_dt_1 is undefined)`);
-            }
-        }
-        
-        // Check leg 2
-        if (maxDelay2 > 0) {
-            if (row._md_dt_2) {
-                const mdTime2 = new Date(row._md_dt_2).getTime();
-                const delay2 = now - mdTime2;
-                if (delay2 > maxDelay2) {
-                    isStale = true;
-                    console.log(`Market data stale for leg 2: delay=${delay2}ms > max=${maxDelay2}ms`);
-                }
-            } else {
-                // Если нет timestamp вообще, считаем данные устаревшими
-                isStale = true;
-                console.log(`Market data stale for leg 2: no timestamp available (row._md_dt_2 is undefined)`);
-            }
-        }
-        
-        const currentFlag = flagCell.textContent.trim();
-        
-        if (isStale) {
-            // Force quote request каждый раз при обнаружении устаревания
-            // Но не чаще чем раз в 5 секунд для одной строки
-            const lastForceRequest = row._lastForceQuoteRequest || 0;
-            const timeSinceLastRequest = now - lastForceRequest;
-            
-            if (timeSinceLastRequest > 5000) { // 5 секунд между запросами
-                console.log('Sending force quote request for stale data');
-                forceQuoteRequest(row);
-                row._lastForceQuoteRequest = now;
-            }
-            
-            // Set alert flag if not already set
-            if (currentFlag !== 'alert') {
-                flagCell.textContent = 'alert';
-                console.log('Setting md_delay_flag to alert');
-                ensureRowPersisted('pairs', row);
-            }
-        } else if (!isStale && currentFlag === 'alert') {
-            // Clear alert flag
-            flagCell.textContent = '';
-            console.log('Clearing md_delay_flag - data is fresh');
-            
-            // Save only this row's flag change, not all pairs
-            ensureRowPersisted('pairs', row);
-        }
-    });
-}
-
-// Глобальная функция для обновления md_dt по class_code/sec_code
-function updateMarketDataTimestamp(class_code, sec_code, timestamp) {
-    console.log(`updateMarketDataTimestamp called: ${class_code}.${sec_code}, timestamp: ${timestamp}`);
-    
-    if (!class_code || !sec_code || !timestamp) {
-        console.log('Missing required parameters for updateMarketDataTimestamp');
-        return;
-    }
-    
-    // Найти актив по class_code/sec_code
-    const asset = Object.values(window._assetIdMap || {}).find(a => 
-        a.class_code === class_code && a.sec_code === sec_code
-    );
-    
-    if (!asset || !asset.code) {
-        console.log(`No asset found for ${class_code}.${sec_code}. Available assets:`, window._assetIdMap);
-        return;
-    }
-    
-    console.log(`Found asset: ${asset.code} for ${class_code}.${sec_code}`);
-    
-    // Найти все строки с этим активом и обновить соответствующие md_dt
-    Array.from(pairsTbody.rows).forEach(row => {
-        const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
-        const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
-        
-        if (asset1 === asset.code) {
-            // Обновляем md_dt_1
-            const mdDtCell = cellById(row, 'md_dt_1');
-            if (mdDtCell) {
-                mdDtCell.textContent = formatTimestamp(timestamp);
-                row._md_dt_1 = timestamp;
-                console.log(`Updated md_dt_1 for ${asset1}: ${formatTimestamp(timestamp)}, raw: ${timestamp}`);
-                // Сохраняем в БД
-                ensureRowPersisted('pairs', row);
-            }
-        }
-        
-        if (asset2 === asset.code) {
-            // Обновляем md_dt_2
-            const mdDtCell = cellById(row, 'md_dt_2');
-            if (mdDtCell) {
-                mdDtCell.textContent = formatTimestamp(timestamp);
-                row._md_dt_2 = timestamp;
-                console.log(`Updated md_dt_2 for ${asset2}: ${formatTimestamp(timestamp)}, raw: ${timestamp}`);
-                // Сохраняем в БД
-                ensureRowPersisted('pairs', row);
-            }
-        }
-    });
-}
-
-function forceQuoteRequest(row) {
-    const asset1 = cellById(row, 'asset_1')?.textContent?.trim();
-    const asset2 = cellById(row, 'asset_2')?.textContent?.trim();
-    
-    if (!asset1 && !asset2) return;
-    
-    console.log(`Force quote request for assets: ${asset1}, ${asset2}`);
-    
-    // Проверяем доступность WebSocket
-    if (!window.mainWs || window.mainWs.readyState !== WebSocket.OPEN) {
-        console.warn('Main WebSocket not available for force_quote, readyState:', window.mainWs?.readyState);
-        // Попробуем переподключиться
-        if (!window.mainWs || window.mainWs.readyState === WebSocket.CLOSED) {
-            console.log('Attempting to reconnect main WebSocket...');
-            const ws = new WebSocket(`ws://${location.host}/ws`);
-            window.mainWs = ws;
-            wsOrder = ws;
-            ws.onmessage = handleWsOrderMessage;
-            ws.onerror = console.error;
-            ws.onopen = () => {
-                console.log('Main WebSocket reconnected');
-                // Повторяем запрос после подключения
-                setTimeout(() => forceQuoteRequest(row), 100);
-            };
-        }
-        return;
-    }
-    
-    // Используем lookupClassSec как в startRowFeeds
-    const cfg1 = asset1 ? lookupClassSec(asset1) : null;
-    const cfg2 = asset2 ? lookupClassSec(asset2) : null;
-    
-    // Отправляем запрос force_quote через основной WebSocket
-    if (cfg1) {
-        console.log(`Sending force_quote for asset1: ${asset1} (${cfg1.classcode}.${cfg1.seccode})`);
-        window.mainWs.send(JSON.stringify({
-            action: 'force_quote',
-            class_code: cfg1.classcode,
-            sec_code: cfg1.seccode
-        }));
-        console.log('Force quote request sent for asset1');
-    } else if (asset1) {
-        console.warn(`Asset1 not found in lookup: ${asset1}`);
-    }
-    
-    if (cfg2) {
-        console.log(`Sending force_quote for asset2: ${asset2} (${cfg2.classcode}.${cfg2.seccode})`);
-        window.mainWs.send(JSON.stringify({
-            action: 'force_quote',
-            class_code: cfg2.classcode,
-            sec_code: cfg2.seccode
-        }));
-        console.log('Force quote request sent for asset2');
-    } else if (asset2) {
-        console.warn(`Asset2 not found in lookup: ${asset2}`);
-    }
-}
-
-function startStalenessCheck() {
-    if (stalenessCheckInterval) {
-        clearInterval(stalenessCheckInterval);
-    }
-    
-    // Check every second
-    stalenessCheckInterval = setInterval(checkMarketDataStaleness, 1000);
-    console.log('Started market data staleness check (1s interval)');
-}
-
-function stopStalenessCheck() {
-    if (stalenessCheckInterval) {
-        clearInterval(stalenessCheckInterval);
-        stalenessCheckInterval = null;
-        console.log('Stopped market data staleness check');
-    }
-}
-
 window.addEventListener('load', async ()=>{
     await backendSync();
     restoreFields();
@@ -2470,48 +2071,11 @@ window.addEventListener('load', async ()=>{
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
     const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
     activate(isNaN(savedTab)?1:savedTab);
-    
-    // Создаем основной WebSocket для общения с сервером раньше всего
-    function ensureMainWebSocket() {
-        if (!wsOrder || wsOrder.readyState !== WebSocket.OPEN) {
-            wsOrder = new WebSocket(`ws://${location.host}/ws`);
-            window.mainWs = wsOrder;
-            wsOrder.onmessage = handleWsOrderMessage;
-            wsOrder.onerror = (e) => {
-                console.error('Main WebSocket error:', e);
-                // Переподключение через 1 секунду
-                setTimeout(ensureMainWebSocket, 1000);
-            };
-            wsOrder.onclose = () => {
-                console.log('Main WebSocket closed, reconnecting...');
-                window.mainWs = null;
-                // Переподключение через 1 секунду
-                setTimeout(ensureMainWebSocket, 1000);
-            };
-            wsOrder.onopen = () => {
-                console.log('Main WebSocket connected');
-                window.mainWs = wsOrder;
-            };
-        }
-    }
-    
-    ensureMainWebSocket();
-    
-    // Start market data staleness checking после небольшой задержки
-    setTimeout(() => {
-        startStalenessCheck();
-    }, 500);
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
 async function ensureRowPersisted(tableType, tr){
     if(!tr) return;
-    
-    // Пропускаем строки помеченные как удаляемые
-    if(tr.dataset.deleting === 'true') {
-        console.log(`[ensureRowPersisted] Skipping deleted ${tableType} row`);
-        return;
-    }
     
     // Защита от повторных вызовов
     if(tr.dataset.persisting === 'true') {

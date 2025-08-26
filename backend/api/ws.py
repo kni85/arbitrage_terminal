@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -32,10 +31,6 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
     def quote_callback(data):
         bids_raw = data.get("bid") or data.get("bids") or data.get("bid_levels")
         asks_raw = data.get("ask") or data.get("asks") or data.get("offer") or data.get("offers")
-        
-        # Получаем информацию об инструменте из данных
-        class_code = data.get("class_code") or data.get("classcode")
-        sec_code = data.get("sec_code") or data.get("seccode")
 
         def _to_list(raw, reverse=False):
             parsed = []
@@ -60,24 +55,9 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
 
         bids = _to_list(bids_raw, reverse=True)
         asks = _to_list(asks_raw, reverse=False)
-        # Всегда добавляем timestamp - либо из данных QUIK, либо местное время
-        timestamp = data.get("time") or datetime.now().isoformat()
-        
-        # Формируем ответ с котировками
-        response = {
-            "orderbook": {"bids": bids, "asks": asks}, 
-            "time": timestamp
-        }
-        
-        # Добавляем информацию об инструменте если есть
-        if class_code:
-            response["class_code"] = class_code
-        if sec_code:
-            response["sec_code"] = sec_code
-            
         loop.call_soon_threadsafe(
             asyncio.create_task,
-            send_json_safe(response),
+            send_json_safe({"orderbook": {"bids": bids, "asks": asks}, "time": data.get("time")}),
         )
 
     broker = container.broker()
@@ -116,25 +96,6 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             elif action == "send_order":
                 resp = await actions.send_order(msg, broker=broker)
                 await send_json_safe({"type": "order_reply", "data": resp})
-            elif action == "force_quote":
-                # Force quote request for stale market data
-                class_code_raw = msg.get("class_code")
-                sec_code_raw = msg.get("sec_code")
-                
-                if not class_code_raw or not sec_code_raw:
-                    await send_json_safe({"type": "error", "message": "Missing class_code or sec_code for force_quote"})
-                    continue
-                    
-                class_code = class_code_raw.strip()
-                sec_code = sec_code_raw.strip()
-                
-                if not class_code or not sec_code:
-                    await send_json_safe({"type": "error", "message": "Empty class_code or sec_code for force_quote"})
-                    continue
-                
-                # Request fresh quote data
-                actions.force_quote_request(class_code, sec_code, quote_callback, broker=broker)
-                logger.info(f"Force quote request sent for {class_code}.{sec_code}")
             else:
                 await send_json_safe({"type": "error", "message": f"Unknown action: {action}"})
     except WebSocketDisconnect:
