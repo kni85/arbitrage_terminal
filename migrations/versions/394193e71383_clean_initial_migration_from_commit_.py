@@ -1,8 +1,8 @@
-"""add_md_dt_timestamps_to_pairs
+"""clean_initial_migration_from_commit_0843241
 
-Revision ID: 883b68f3350b
-Revises: 1d67ad887c0d
-Create Date: 2025-08-24 19:25:12.975700
+Revision ID: 394193e71383
+Revises: 
+Create Date: 2025-08-26 18:12:01.036542
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import sqlite
 
 # revision identifiers, used by Alembic.
-revision: str = '883b68f3350b'
-down_revision: Union[str, None] = '1d67ad887c0d'
+revision: str = '394193e71383'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
