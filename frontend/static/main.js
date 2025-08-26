@@ -2014,6 +2014,8 @@ async function syncPairs(rows){
             get_mdata: !!r.get_mdata,
             started: !!r.started,
             error: r.error?.trim()||'',
+            md_dt_1: r.md_dt_1 || null,
+            md_dt_2: r.md_dt_2 || null,
         };
         const payloadClean = {};
         Object.entries(payload).forEach(([k,v])=>{ 
