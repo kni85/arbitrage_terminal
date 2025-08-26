@@ -1291,6 +1291,32 @@ function addPairsRow(data){
 
     // initial hit price
     updateHitPrice(row);
+    
+    // Инициализируем _md_dt_1 и _md_dt_2 для новых строк
+    // Если есть значения в ячейках, используем их
+    const mdDt1Cell = cellById(row, 'md_dt_1');
+    const mdDt2Cell = cellById(row, 'md_dt_2');
+    if (mdDt1Cell) {
+        const mdDt1Text = mdDt1Cell.textContent.trim();
+        if (mdDt1Text && mdDt1Text !== 'Invalid Date') {
+            // Пытаемся восстановить ISO строку из форматированной даты
+            const date1 = new Date(mdDt1Text.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3})/, '$1-$2-$3T$4:$5:$6.$7'));
+            if (!isNaN(date1.getTime())) {
+                row._md_dt_1 = date1.toISOString();
+            }
+        }
+    }
+    if (mdDt2Cell) {
+        const mdDt2Text = mdDt2Cell.textContent.trim();
+        if (mdDt2Text && mdDt2Text !== 'Invalid Date') {
+            // Пытаемся восстановить ISO строку из форматированной даты
+            const date2 = new Date(mdDt2Text.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3})/, '$1-$2-$3T$4:$5:$6.$7'));
+            if (!isNaN(date2.getTime())) {
+                row._md_dt_2 = date2.toISOString();
+            }
+        }
+    }
+    
     return row;
 }
 
@@ -1380,6 +1406,15 @@ function restorePairsTable(){
             if(item.id) {
                 r.dataset.id = String(item.id);
                 console.log(`restorePairsTable - set row.dataset.id = ${item.id} for assets ${item.asset_1}/${item.asset_2}, error from DB: "${item.error}"`);
+            }
+            // Инициализируем _md_dt_1 и _md_dt_2 для проверки устаревания
+            if (item.md_dt_1) {
+                r._md_dt_1 = item.md_dt_1;
+                console.log(`restorePairsTable - initialized row._md_dt_1 = ${item.md_dt_1}`);
+            }
+            if (item.md_dt_2) {
+                r._md_dt_2 = item.md_dt_2;
+                console.log(`restorePairsTable - initialized row._md_dt_2 = ${item.md_dt_2}`);
             }
         }
     });
@@ -2201,40 +2236,67 @@ async function syncPairs(rows){
 let stalenessCheckInterval;
 
 function checkMarketDataStaleness() {
-    const now = Date.now();
+    const pairsTbody = document.querySelector('#pair_arbitrage tbody');
+    if (!pairsTbody) {
+        console.log('[checkMarketDataStaleness] No pairs tbody found');
+        return;
+    }
     
-    Array.from(pairsTbody.rows).forEach(row => {
+    const now = Date.now();
+    console.log(`[checkMarketDataStaleness] Checking ${pairsTbody.rows.length} rows at ${new Date(now).toISOString()}`);
+    
+    Array.from(pairsTbody.rows).forEach((row, idx) => {
         const maxDelay1Cell = cellById(row, 'max_md_delay_1');
         const maxDelay2Cell = cellById(row, 'max_md_delay_2');
         const flagCell = cellById(row, 'md_delay_flag');
         
-        if (!maxDelay1Cell || !maxDelay2Cell || !flagCell) return;
+        if (!maxDelay1Cell || !maxDelay2Cell || !flagCell) {
+            console.log(`[checkMarketDataStaleness] Row ${idx}: Missing cells`);
+            return;
+        }
         
         const maxDelay1 = parseInt(maxDelay1Cell.textContent) || 0;
         const maxDelay2 = parseInt(maxDelay2Cell.textContent) || 0;
         
         // Skip if no delays configured
-        if (maxDelay1 === 0 && maxDelay2 === 0) return;
+        if (maxDelay1 === 0 && maxDelay2 === 0) {
+            console.log(`[checkMarketDataStaleness] Row ${idx}: No delays configured`);
+            return;
+        }
+        
+        console.log(`[checkMarketDataStaleness] Row ${idx}: Checking with maxDelay1=${maxDelay1}, maxDelay2=${maxDelay2}, _md_dt_1=${row._md_dt_1}, _md_dt_2=${row._md_dt_2}`);
         
         let isStale = false;
         
         // Check leg 1
-        if (maxDelay1 > 0 && row._md_dt_1) {
-            const mdTime1 = new Date(row._md_dt_1).getTime();
-            const delay1 = now - mdTime1;
-            if (delay1 > maxDelay1) {
+        if (maxDelay1 > 0) {
+            if (row._md_dt_1) {
+                const mdTime1 = new Date(row._md_dt_1).getTime();
+                const delay1 = now - mdTime1;
+                if (delay1 > maxDelay1) {
+                    isStale = true;
+                    console.log(`Market data stale for leg 1: delay=${delay1}ms > max=${maxDelay1}ms`);
+                }
+            } else {
+                // Если нет timestamp вообще, считаем данные устаревшими
                 isStale = true;
-                console.log(`Market data stale for leg 1: delay=${delay1}ms > max=${maxDelay1}ms`);
+                console.log(`Market data stale for leg 1: no timestamp available (row._md_dt_1 is undefined)`);
             }
         }
         
         // Check leg 2
-        if (maxDelay2 > 0 && row._md_dt_2) {
-            const mdTime2 = new Date(row._md_dt_2).getTime();
-            const delay2 = now - mdTime2;
-            if (delay2 > maxDelay2) {
+        if (maxDelay2 > 0) {
+            if (row._md_dt_2) {
+                const mdTime2 = new Date(row._md_dt_2).getTime();
+                const delay2 = now - mdTime2;
+                if (delay2 > maxDelay2) {
+                    isStale = true;
+                    console.log(`Market data stale for leg 2: delay=${delay2}ms > max=${maxDelay2}ms`);
+                }
+            } else {
+                // Если нет timestamp вообще, считаем данные устаревшими
                 isStale = true;
-                console.log(`Market data stale for leg 2: delay=${delay2}ms > max=${maxDelay2}ms`);
+                console.log(`Market data stale for leg 2: no timestamp available (row._md_dt_2 is undefined)`);
             }
         }
         
