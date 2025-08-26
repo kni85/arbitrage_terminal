@@ -2063,6 +2063,9 @@ async function syncPairs(rows){
 
 // Заменяем старый обработчик загрузки на async для синхронизации с сервером
 window.addEventListener('load', async ()=>{
+    // СНАЧАЛА сохраняем текущую вкладку пользователя
+    const userTab = parseInt(localStorage.getItem('active_tab')||'1');
+    
     await backendSync();
     restoreFields();
     restorePairsOrder(); // сначала порядок колонок
@@ -2071,8 +2074,9 @@ window.addEventListener('load', async ()=>{
     restorePairsTable(); // строки после порядка, внутри вызовет restorePairsWidths
     enablePairsDragDrop();
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
-    const savedTab = parseInt(localStorage.getItem('active_tab')||'1');
-    activate(isNaN(savedTab)?1:savedTab);
+    
+    // ВОССТАНАВЛИВАЕМ вкладку пользователя (не серверную)
+    activate(isNaN(userTab)?1:userTab);
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
