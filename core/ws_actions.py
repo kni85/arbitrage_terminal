@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Dict, Tuple
 
-from infra.quik_adapter import QuikBrokerAdapter
 from core.broker import Broker
 # for TRANS_ID generation and mapping
 from db.database import AsyncSessionLocal
@@ -23,16 +22,18 @@ QuoteCallback = Callable[[Dict[str, Any]], None]
 # Подписка на котировки
 # ---------------------------------------------------------------------------
 
-_default_broker: Broker = QuikBrokerAdapter()
+def _get_broker() -> Broker:
+    """Ленивое получение брокера из DI-контейнера."""
+    return container.broker()
 
 
 def start_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: Broker | None = None) -> None:  # noqa: D401
     """Подписаться на стакан L2."""
-    (broker or _default_broker).subscribe_quotes(class_code, sec_code, cb)
+    (broker or _get_broker()).subscribe_quotes(class_code, sec_code, cb)
 
 
 def stop_quotes(class_code: str, sec_code: str, cb: QuoteCallback, broker: Broker | None = None) -> None:  # noqa: D401
-    (broker or _default_broker).unsubscribe_quotes(class_code, sec_code, cb)
+    (broker or _get_broker()).unsubscribe_quotes(class_code, sec_code, cb)
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
     except Exception:
         pass
 
-    broker = broker or _default_broker
+    broker = broker or _get_broker()
     if order_type == "M":
         return await broker.place_market_order(order)  # type: ignore[return-value]
     return await broker.place_limit_order(order)  # type: ignore[return-value]
@@ -131,7 +132,7 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
             "ACCOUNT": account2,"CLIENT_CODE": client2,"OPERATION": op2,
             "QUANTITY": str(qty2),"PRICE": "0","TYPE": "M","TRANS_ID": str(trans2),
         }
-        broker = broker or _default_broker
+        broker = broker or _get_broker()
         res1 = await broker.place_market_order(order1)
         res2 = await broker.place_market_order(order2)
         ok = (str(res1.get("result", "0")) != "-1") and (str(res2.get("result", "0")) != "-1")
