@@ -114,6 +114,17 @@ class QuikConnector:
             return
         self._initialized = True
 
+        # Инициализируем все атрибуты ДО попытки подключения
+        self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
+        self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
+        self._order_callbacks: Dict[str, list[OrderCallback]] = {}
+        self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stop_quote_thread = threading.Event()
+        self._heartbeat_callbacks: list[Callable[[dict[str, Any]], None]] = []
+        self._last_heartbeat_time: float = 0.0
+        self._use_dummy_quotes: bool = False
+
         host_real = host or "127.0.0.1"
         # Пытаемся подключиться к реальному QuikPy; если соединение отказано –
         # создаём Dummy-объект (работа офлайн).
@@ -123,13 +134,12 @@ class QuikConnector:
                 requests_port=requests_port,
                 callbacks_port=callbacks_port,
             )
+            logger.info("QuikPy connected successfully to %s:%s", host_real, requests_port)
         except Exception as exc:  # pragma: no cover – QUIK off
             logger.warning("QuikPy connection failed (%s) — switching to Dummy", exc)
-            self._qp = QuikPy()  # type: ignore  # Dummy class above
-
-        # Определяем, работаем ли мы в режиме заглушки (DummyQuikPy)
-        # Если класс QuikPy объявлен в этом же модуле, значит подключение не удалось
-        self._use_dummy_quotes: bool = self._qp.__class__.__module__ == __name__
+            # Используем Dummy-класс, который определен выше в except ImportError
+            self._use_dummy_quotes = True
+            self._qp = QuikPy(host=host_real, requests_port=requests_port, callbacks_port=callbacks_port)  # type: ignore
 
         # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
         # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
@@ -142,21 +152,10 @@ class QuikConnector:
         self._qp.on_order = self._on_order  # type: ignore[attr-defined]
         if hasattr(self._qp, "on_quote"):
             self._qp.on_quote = self._on_quote  # type: ignore[attr-defined]
-        
-        # Heartbeat callback
-        self._heartbeat_callbacks: list[Callable[[dict[str, Any]], None]] = []
-        self._last_heartbeat_time: float = 0.0
         if hasattr(self._qp, "on_heartbeat"):
             self._qp.on_heartbeat = self._on_heartbeat  # type: ignore[attr-defined]
 
-        self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
-        self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
-        self._order_callbacks: Dict[str, list[OrderCallback]] = {}
-        self._event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue(maxsize=1000)
-        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
-
         # Запускаем поток-эмулятор котировок **только** если QuikPy не подключён
-        self._stop_quote_thread = threading.Event()
         if self._use_dummy_quotes:
             self._quote_thread = threading.Thread(
                 target=self._quote_listener_loop,
