@@ -139,7 +139,27 @@ class QuikConnector:
             logger.warning("QuikPy connection failed (%s) — switching to Dummy", exc)
             # Используем Dummy-класс, который определен выше в except ImportError
             self._use_dummy_quotes = True
-            self._qp = QuikPy(host=host_real, requests_port=requests_port, callbacks_port=callbacks_port)  # type: ignore
+            # Создаём Dummy без параметров, чтобы не было повторной попытки подключения
+            try:
+                # Если Dummy-класс доступен (ImportError сработал), используем его
+                self._qp = QuikPy()  # type: ignore
+            except Exception:
+                # Если и это не работает, создаём минимальную заглушку
+                logger.error("Cannot create Dummy QuikPy - creating minimal stub")
+                
+                class MinimalDummy:
+                    def subscribe_level2_quotes(self, *args, **kwargs): pass
+                    def unsubscribe_level2_quotes(self, *args, **kwargs): pass
+                    def subscribe_trades(self, *args, **kwargs): pass
+                    def unsubscribe_trades(self, *args, **kwargs): pass
+                    def on_trade(self, *args, **kwargs): pass
+                    def on_trans_reply(self, *args, **kwargs): pass
+                    def on_order(self, *args, **kwargs): pass
+                    def on_quote(self, *args, **kwargs): pass
+                    def on_heartbeat(self, *args, **kwargs): pass
+                    def process_request(self, *args, **kwargs): return {"result": -1, "message": "Dummy"}
+                
+                self._qp = MinimalDummy()  # type: ignore
 
         # --- Привязываем callback-методы QuikPy к локальным обработчикам ---
         # Это позволяет OrderManager получать события OnOrder / OnTrade / OnTransReply
