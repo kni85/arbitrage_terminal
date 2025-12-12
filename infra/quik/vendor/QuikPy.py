@@ -72,9 +72,7 @@ class QuikPy:
         self.requests_port = requests_port  # Порт для отправки запросов и получения ответов
         self.callbacks_port = callbacks_port  # Порт для функций обратного вызова
         self.socket_requests = socket(AF_INET, SOCK_STREAM)  # Создаем соединение для запросов
-        self.socket_requests.settimeout(5.0)  # Таймаут подключения 5 секунд
         self.socket_requests.connect((self.host, self.requests_port))  # Открываем соединение для запросов
-        self.socket_requests.settimeout(None)  # Убираем таймаут после подключения
 
         self.callback_exit_event = Event()  # Определяем событие выхода из потока
         self.callback_thread = Thread(target=self.callback_handler, name='CallbackThread').start()  # Создаем и запускаем поток обработки функций обратного вызова
