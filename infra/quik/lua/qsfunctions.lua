@@ -48,6 +48,22 @@ function qsfunctions.echo(msg)
     return msg
 end
 
+--- Sets heartbeat interval
+-- @param msg message table with interval in milliseconds
+-- @return confirmation message
+function qsfunctions.SetHeartbeat(msg)
+    local interval = msg.data or msg.interval
+    if type(interval) == "number" and interval > 0 then
+        heartbeat_interval = interval
+        msg.data = {result = 0, message = "Heartbeat interval set to " .. interval .. " ms"}
+        log("Heartbeat interval set to " .. interval .. " ms", 0)
+    else
+        msg.data = {result = -1, message = "Invalid heartbeat interval"}
+        log("Invalid heartbeat interval: " .. tostring(interval), 3)
+    end
+    return msg
+end
+
 --- Test error handling
 function qsfunctions.divide_string_by_zero(msg)
     msg.data = "asd" / 0

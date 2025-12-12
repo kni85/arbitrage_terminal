@@ -66,6 +66,7 @@ class QuikPy:
         # Функции обратного вызова QUIK#
         self.on_new_candle = self.default_handler  # Новая свечка
         self.on_error = self.default_handler  # Сообщение об ошибке
+        self.on_heartbeat = self.default_handler  # Heartbeat от lua-скрипта
 
         self.host = host  # IP адрес или название хоста
         self.requests_port = requests_port  # Порт для отправки запросов и получения ответов
@@ -925,6 +926,8 @@ class QuikPy:
                     self.on_param(data)
                 elif data['cmd'] == 'OnQuote':  # 19. Изменение стакана котировок
                     self.on_quote(data)
+                elif data['cmd'] == 'Heartbeat':  # Heartbeat от lua-скрипта
+                    self.on_heartbeat(data)
                 elif data['cmd'] == 'OnDisconnected':  # 20. Отключение терминала от сервера QUIK
                     self.on_disconnected(data)
                 elif data['cmd'] == 'OnConnected':  # 21. Соединение терминала с сервером QUIK

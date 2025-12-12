@@ -142,6 +142,12 @@ class QuikConnector:
         self._qp.on_order = self._on_order  # type: ignore[attr-defined]
         if hasattr(self._qp, "on_quote"):
             self._qp.on_quote = self._on_quote  # type: ignore[attr-defined]
+        
+        # Heartbeat callback
+        self._heartbeat_callbacks: list[Callable[[dict[str, Any]], None]] = []
+        self._last_heartbeat_time: float = 0.0
+        if hasattr(self._qp, "on_heartbeat"):
+            self._qp.on_heartbeat = self._on_heartbeat  # type: ignore[attr-defined]
 
         self._quote_callbacks: Dict[str, list[QuoteCallback]] = {}
         self._trade_callbacks: Dict[str, list[TradeCallback]] = {}
@@ -177,6 +183,32 @@ class QuikConnector:
             if func is not None:
                 return func(**kwargs) if kwargs else func(*())
         raise AttributeError(f"None of methods {names} found in QuikPy")
+
+    # ------------------------------------------------------------------
+    # Heartbeat configuration
+    # ------------------------------------------------------------------
+
+    async def set_heartbeat_interval(self, interval_ms: int) -> dict[str, Any]:
+        """Установить интервал heartbeat в Lua-скрипте (миллисекунды)."""
+        if interval_ms < 1000:
+            logger.warning("Heartbeat interval too low (%d ms), setting to 1000 ms", interval_ms)
+            interval_ms = 1000
+        
+        loop = asyncio.get_running_loop()
+        
+        def _send_cmd():
+            return self._qp.process_request({
+                'cmd': 'SetHeartbeat',
+                'interval': interval_ms
+            })
+        
+        try:
+            result = await loop.run_in_executor(None, _send_cmd)
+            logger.info("Heartbeat interval set to %d ms: %s", interval_ms, result)
+            return result
+        except Exception as exc:
+            logger.exception("Failed to set heartbeat interval: %s", exc)
+            return {"result": -1, "message": str(exc)}
 
     # ------------------------------------------------------------------
     # Подписки на стакан L2
@@ -460,6 +492,38 @@ class QuikConnector:
             _c.order_manager().on_trans_reply_event(payload)
         except Exception:
             pass
+
+    def _on_heartbeat(self, event):
+        """Обработчик heartbeat от QUIK."""
+        import time
+        self._last_heartbeat_time = time.time()
+        payload = event.get("data", event)
+        payload["type"] = "heartbeat"
+        payload["cmd"] = event.get("cmd")
+        
+        # Отправляем в очередь событий
+        try:
+            self._event_queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            logger.debug("Event queue full — dropping heartbeat")
+        
+        # Вызываем зарегистрированные callback-и
+        for cb in self._heartbeat_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(cb) and self._main_loop:
+                    asyncio.run_coroutine_threadsafe(cb(payload), self._main_loop)
+                else:
+                    cb(payload)
+            except Exception as exc:
+                logger.exception("Heartbeat callback error: %s", exc)
+    
+    def register_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
+        """Зарегистрировать callback для heartbeat событий."""
+        self._heartbeat_callbacks.append(cb)
+    
+    def get_last_heartbeat_time(self) -> float:
+        """Получить timestamp последнего heartbeat (unix time)."""
+        return self._last_heartbeat_time
 
     # ------------------------------------------------------------------
     # Обработчик реальных котировок из QuikPy

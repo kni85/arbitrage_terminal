@@ -53,10 +53,26 @@
         .context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; display: none; box-shadow: 2px 2px 6px rgba(0,0,0,0.2); }
         .context-menu button { display: block; width: 100%; padding: 4px 10px; border: none; background: none; text-align: left; }
         .context-menu button:hover { background: #f0f0f0; }
+        
+        /* Heartbeat indicator */
+        .heartbeat-indicator { position: fixed; top: 10px; right: 10px; padding: 8px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        .heartbeat-indicator.ok { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .heartbeat-indicator.warning { background: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .heartbeat-indicator.error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
     </style>
 </head>
 <body>
     <h2 id="page_title">asset_1</h2>
+    
+    <!-- Heartbeat indicator -->
+    <div id="heartbeat_indicator" class="heartbeat-indicator">
+        <div>QUIK: <span id="hb_status">connecting...</span></div>
+        <div style="margin-top:4px;">
+            <label style="width:auto;">Interval (sec):</label>
+            <input id="hb_interval" type="number" value="10" min="1" max="60" style="width:50px;" />
+            <button id="hb_set" style="padding:2px 8px;">Set</button>
+        </div>
+    </div>
 
     <!-- Tabs navigation -->
     <div class="tabs">

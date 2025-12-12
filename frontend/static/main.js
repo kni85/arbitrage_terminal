@@ -36,6 +36,7 @@ let ws = null;
             el('start').disabled = true;
             el('stop').disabled  = false;
             localStorage.setItem(SUB_KEY, JSON.stringify({classcode, seccode}));
+            window._activeWs = ws;  // Save for heartbeat
         };
 
     ws.onmessage = (ev) => {
@@ -43,6 +44,9 @@ let ws = null;
             if (msg.orderbook) {
                 renderOrderbook(el('ob'), msg.orderbook);
                 recalc(prefix, msg.orderbook);
+            }
+            if (msg.type === 'heartbeat' && window.onHeartbeat) {
+                window.onHeartbeat(msg.data);
             }
         };
 
@@ -201,8 +205,17 @@ const handleWsOrderMessage = (ev) => {
 function ensureWsOrderAndSend(payload){
     if(!wsOrder||wsOrder.readyState!==1){
         wsOrder = new WebSocket(`ws://${location.host}/ws`);
-        wsOrder.onopen = () => wsOrder.send(JSON.stringify(payload));
-        wsOrder.onmessage = handleWsOrderMessage;
+        wsOrder.onopen = () => {
+            wsOrder.send(JSON.stringify(payload));
+            window._activeWs = wsOrder;  // Save for heartbeat
+        };
+        wsOrder.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === 'heartbeat' && window.onHeartbeat) {
+                window.onHeartbeat(msg.data);
+            }
+            handleWsOrderMessage(ev);
+        };
         wsOrder.onerror = console.error;
     } else {
         wsOrder.send(JSON.stringify(payload));
@@ -1397,9 +1410,13 @@ function connectAsset(row, idx, cfg){
     const ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = ()=>{
         ws.send(JSON.stringify({action:'start', class_code:cfg.classcode, sec_code:cfg.seccode}));
+        window._activeWs = ws;  // Save for heartbeat
     };
     ws.onmessage = (ev)=>{
         const msg = JSON.parse(ev.data);
+        if (msg.type === 'heartbeat' && window.onHeartbeat) {
+            window.onHeartbeat(msg.data);
+        }
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
@@ -2252,3 +2269,70 @@ function removeRowFromLocalStorage(tableType, id, tr){
     }
     localStorage.setItem(key, JSON.stringify(arr));
 }
+
+// -------------------- Heartbeat monitoring ----------------------------
+(function(){
+    const indicator = document.getElementById('heartbeat_indicator');
+    const statusEl = document.getElementById('hb_status');
+    const intervalInput = document.getElementById('hb_interval');
+    const setButton = document.getElementById('hb_set');
+    
+    let lastHeartbeat = 0;
+    let checkInterval = null;
+    
+    function updateStatus() {
+        const now = Date.now();
+        const elapsed = (now - lastHeartbeat) / 1000;
+        
+        if (lastHeartbeat === 0) {
+            statusEl.textContent = 'connecting...';
+            indicator.className = 'heartbeat-indicator';
+        } else if (elapsed < 15) {
+            statusEl.textContent = `OK (${elapsed.toFixed(0)}s ago)`;
+            indicator.className = 'heartbeat-indicator ok';
+        } else if (elapsed < 30) {
+            statusEl.textContent = `Warning (${elapsed.toFixed(0)}s ago)`;
+            indicator.className = 'heartbeat-indicator warning';
+        } else {
+            statusEl.textContent = `ERROR (${elapsed.toFixed(0)}s ago)`;
+            indicator.className = 'heartbeat-indicator error';
+        }
+    }
+    
+    // Обновляем статус каждую секунду
+    checkInterval = setInterval(updateStatus, 1000);
+    
+    // Глобальная функция для обработки heartbeat от WebSocket
+    window.onHeartbeat = function(data) {
+        lastHeartbeat = Date.now();
+        updateStatus();
+    };
+    
+    // Настройка интервала
+    setButton.onclick = function() {
+        const interval = parseInt(intervalInput.value, 10);
+        if (interval < 1 || interval > 60) {
+            alert('Interval must be between 1 and 60 seconds');
+            return;
+        }
+        
+        // Отправляем через любой открытый WebSocket
+        // Попробуем найти активное соединение
+        const ws = findActiveWebSocket();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                action: 'set_heartbeat',
+                interval: interval * 1000  // convert to milliseconds
+            }));
+            statusEl.textContent = `Setting interval to ${interval}s...`;
+        } else {
+            alert('No active WebSocket connection. Please start quotes first.');
+        }
+    };
+    
+    function findActiveWebSocket() {
+        // Попытаемся найти активный WebSocket в глобальных переменных
+        // Это работает для quote WebSocket'ов
+        return window._activeWs || null;
+    }
+})();

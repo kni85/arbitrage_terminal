@@ -67,11 +67,37 @@ local response_port = 34130
 local callback_host = '127.0.0.1'
 local callback_port = response_port + 1
 
+-- Heartbeat settings
+local heartbeat_interval = 10000  -- default 10 seconds in milliseconds
+local last_heartbeat = 0
+
+function send_heartbeat()
+    local msg = {}
+    msg.cmd = "Heartbeat"
+    msg.t = timemsec()
+    msg.data = {
+        server_time = getInfoParam("SERVERTIME"),
+        script_time = os.date("%Y-%m-%d %H:%M:%S")
+    }
+    sendCallback(msg)
+end
+
 function do_main()
     log("Entered main function", 0)
+    last_heartbeat = os.clock() * 1000
     while is_started do
         -- if not connected, connect
         util.connect(response_host, response_port, callback_host, callback_port)
+        
+        -- Check if heartbeat should be sent
+        local now = os.clock() * 1000
+        if (now - last_heartbeat) >= heartbeat_interval then
+            if is_connected then
+                send_heartbeat()
+            end
+            last_heartbeat = now
+        end
+        
         -- when connected, process queue
         -- receive message,
         local requestMsg = receiveRequest()
