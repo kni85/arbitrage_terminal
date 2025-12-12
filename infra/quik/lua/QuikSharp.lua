@@ -74,12 +74,12 @@ local last_heartbeat = 0
 function send_heartbeat()
     local msg = {}
     msg.cmd = "Heartbeat"
-    msg.t = timemsec()
+    msg.t = util.timemsec()
     msg.data = {
         server_time = getInfoParam("SERVERTIME"),
         script_time = os.date("%Y-%m-%d %H:%M:%S")
     }
-    sendCallback(msg)
+    util.sendCallback(msg)
 end
 
 function do_main()
@@ -92,7 +92,7 @@ function do_main()
         -- Check if heartbeat should be sent
         local now = os.clock() * 1000
         if (now - last_heartbeat) >= heartbeat_interval then
-            if is_connected then
+            if util.is_connected then
                 send_heartbeat()
             end
             last_heartbeat = now
