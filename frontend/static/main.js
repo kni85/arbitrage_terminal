@@ -2304,6 +2304,7 @@ function removeRowFromLocalStorage(tableType, id, tr){
     
     // Глобальная функция для обработки heartbeat от WebSocket
     window.onHeartbeat = function(data) {
+        console.log('[Heartbeat] Received:', data);
         lastHeartbeat = Date.now();
         updateStatus();
     };
