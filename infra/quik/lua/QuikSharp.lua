@@ -67,8 +67,8 @@ local response_port = 34130
 local callback_host = '127.0.0.1'
 local callback_port = response_port + 1
 
--- Heartbeat settings
-local heartbeat_interval = 10000  -- default 10 seconds in milliseconds
+-- Heartbeat settings (global to allow qsfunctions to modify)
+heartbeat_interval = 10000  -- default 10 seconds in milliseconds
 local last_heartbeat = 0
 
 function send_heartbeat()
