@@ -515,6 +515,7 @@ class QuikConnector:
     def _on_heartbeat(self, event):
         """Обработчик heartbeat от QUIK."""
         import time
+        logger.info(f"_on_heartbeat called with event: {event}")
         self._last_heartbeat_time = time.time()
         payload = event.get("data", event)
         payload["type"] = "heartbeat"
@@ -527,6 +528,7 @@ class QuikConnector:
             logger.debug("Event queue full — dropping heartbeat")
         
         # Вызываем зарегистрированные callback-и
+        logger.info(f"Calling {len(self._heartbeat_callbacks)} heartbeat callbacks")
         for cb in self._heartbeat_callbacks:
             try:
                 if asyncio.iscoroutinefunction(cb) and self._main_loop:
