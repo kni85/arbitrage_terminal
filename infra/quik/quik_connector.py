@@ -538,7 +538,13 @@ class QuikConnector:
     
     def register_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
         """Зарегистрировать callback для heartbeat событий."""
-        self._heartbeat_callbacks.append(cb)
+        if cb not in self._heartbeat_callbacks:
+            self._heartbeat_callbacks.append(cb)
+    
+    def unregister_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
+        """Удалить callback для heartbeat событий."""
+        if cb in self._heartbeat_callbacks:
+            self._heartbeat_callbacks.remove(cb)
     
     def get_last_heartbeat_time(self) -> float:
         """Получить timestamp последнего heartbeat (unix time)."""

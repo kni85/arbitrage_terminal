@@ -60,17 +60,17 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
             send_json_safe({"orderbook": {"bids": bids, "asks": asks}, "time": data.get("time")}),
         )
     
+    broker = container.broker()
+    connector = broker._connector  # type: ignore
+    
     def heartbeat_callback(data):
         """Обработчик heartbeat от QUIK."""
         loop.call_soon_threadsafe(
             asyncio.create_task,
             send_json_safe({"type": "heartbeat", "data": data}),
         )
-
-    broker = container.broker()
     
-    # Регистрируем heartbeat callback
-    connector = broker._connector  # type: ignore
+    # Регистрируем heartbeat callback для этого WebSocket
     connector.register_heartbeat_callback(heartbeat_callback)
 
     try:
@@ -126,3 +126,5 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
     finally:
         if current_sub:
             actions.stop_quotes(*current_sub, quote_callback, broker=broker)
+        # Отписываемся от heartbeat
+        connector.unregister_heartbeat_callback(heartbeat_callback)
