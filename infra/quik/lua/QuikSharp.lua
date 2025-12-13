@@ -90,13 +90,14 @@ local last_heartbeat = 0
 
 function do_main()
     log("Entered main function", 0)
-    last_heartbeat = os.clock() * 1000
+    -- Используем timemsec() (wall clock) вместо os.clock() (CPU time)
+    last_heartbeat = timemsec()
     while is_started do
         -- if not connected, connect
         util.connect(response_host, response_port, callback_host, callback_port)
         
         -- Check if heartbeat should be sent
-        local now = os.clock() * 1000
+        local now = timemsec()
         local elapsed = now - last_heartbeat
         if elapsed >= heartbeat_interval then
             log("Heartbeat timer triggered. Elapsed: " .. elapsed .. "ms, interval: " .. heartbeat_interval .. "ms, connected: " .. tostring(is_connected), 0)
