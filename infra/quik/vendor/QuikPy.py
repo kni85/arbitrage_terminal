@@ -927,15 +927,7 @@ class QuikPy:
                 elif data['cmd'] == 'OnQuote':  # 19. Изменение стакана котировок
                     self.on_quote(data)
                 elif data['cmd'] == 'Heartbeat':  # Heartbeat от lua-скрипта
-                    print(f"[QuikPy] Received Heartbeat: {data}")
-                    print(f"[QuikPy] on_heartbeat handler: {self.on_heartbeat}")
-                    try:
-                        self.on_heartbeat(data)
-                        print(f"[QuikPy] on_heartbeat called successfully")
-                    except Exception as e:
-                        print(f"[QuikPy] on_heartbeat ERROR: {e}")
-                        import traceback
-                        traceback.print_exc()
+                    self.on_heartbeat(data)
                 elif data['cmd'] == 'OnDisconnected':  # 20. Отключение терминала от сервера QUIK
                     self.on_disconnected(data)
                 elif data['cmd'] == 'OnConnected':  # 21. Соединение терминала с сервером QUIK

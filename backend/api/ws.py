@@ -65,7 +65,6 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
     
     def heartbeat_callback(data):
         """Обработчик heartbeat от QUIK."""
-        logger.info(f"Heartbeat callback triggered: {data}")
         loop.call_soon_threadsafe(
             asyncio.create_task,
             send_json_safe({"type": "heartbeat", "data": data}),
@@ -110,9 +109,7 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
                 await send_json_safe({"type": "order_reply", "data": resp})
             elif action == "set_heartbeat":
                 interval = msg.get("interval", 10000)
-                logger.info(f"set_heartbeat action received, interval={interval}")
                 result = await connector.set_heartbeat_interval(interval)
-                logger.info(f"set_heartbeat_interval result: {result}")
                 await send_json_safe({"type": "heartbeat_config", "data": result})
             else:
                 await send_json_safe({"type": "error", "message": f"Unknown action: {action}"})

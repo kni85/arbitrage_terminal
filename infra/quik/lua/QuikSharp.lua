@@ -100,11 +100,8 @@ function do_main()
         local now = timemsec()
         local elapsed = now - last_heartbeat
         if elapsed >= heartbeat_interval then
-            log("Heartbeat timer triggered. Elapsed: " .. elapsed .. "ms, interval: " .. heartbeat_interval .. "ms, connected: " .. tostring(is_connected), 0)
             if is_connected then
                 send_heartbeat()
-            else
-                log("Skipping heartbeat - not connected", 1)
             end
             last_heartbeat = now
         end
