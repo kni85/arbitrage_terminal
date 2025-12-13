@@ -53,17 +53,18 @@ package.cpath = package.cpath .. ";" .. script_path .. libPath .. '?.dll'..";"..
 local util = require("qsutils")
 
 -- Определяем send_heartbeat ДО загрузки qsfunctions, чтобы она была доступна
+-- timemsec и sendCallback — глобальные функции из qsutils
 function send_heartbeat()
     log("send_heartbeat() called", 0)
     local msg = {}
     msg.cmd = "Heartbeat"
-    msg.t = util.timemsec()
+    msg.t = timemsec()
     msg.data = {
         server_time = getInfoParam("SERVERTIME"),
         script_time = os.date("%Y-%m-%d %H:%M:%S")
     }
     log("Sending heartbeat: " .. to_json(msg), 0)
-    local result = util.sendCallback(msg)
+    local result = sendCallback(msg)
     log("sendCallback result: " .. tostring(result), 0)
 end
 
@@ -98,8 +99,8 @@ function do_main()
         local now = os.clock() * 1000
         local elapsed = now - last_heartbeat
         if elapsed >= heartbeat_interval then
-            log("Heartbeat timer triggered. Elapsed: " .. elapsed .. "ms, interval: " .. heartbeat_interval .. "ms, connected: " .. tostring(util.is_connected), 0)
-            if util.is_connected then
+            log("Heartbeat timer triggered. Elapsed: " .. elapsed .. "ms, interval: " .. heartbeat_interval .. "ms, connected: " .. tostring(is_connected), 0)
+            if is_connected then
                 send_heartbeat()
             else
                 log("Skipping heartbeat - not connected", 1)

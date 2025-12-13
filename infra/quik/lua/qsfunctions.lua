@@ -2,7 +2,6 @@
 --~ Licensed under the Apache License, Version 2.0. See LICENSE.txt in the project root for license information.
 
 local json = require ("dkjson")
-local qsutils = require ("qsutils")
 local qsfunctions = {}
 
 -- Локальная функция для отправки heartbeat (не зависит от глобальной)
@@ -10,13 +9,14 @@ local function send_heartbeat_local()
     log("send_heartbeat_local() called from qsfunctions", 0)
     local msg = {}
     msg.cmd = "Heartbeat"
-    msg.t = qsutils.timemsec()
+    -- timemsec и sendCallback — глобальные функции из qsutils
+    msg.t = timemsec()
     msg.data = {
         server_time = getInfoParam("SERVERTIME"),
         script_time = os.date("%Y-%m-%d %H:%M:%S")
     }
     log("Sending heartbeat: " .. to_json(msg), 0)
-    local result = qsutils.sendCallback(msg)
+    local result = sendCallback(msg)
     log("sendCallback result: " .. tostring(result), 0)
     return result
 end
