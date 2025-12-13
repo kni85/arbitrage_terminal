@@ -517,18 +517,26 @@ class QuikConnector:
         import time
         print(f"[CONNECTOR] _on_heartbeat called with event: {event}")
         logger.info(f"_on_heartbeat called with event: {event}")
+        print("[CONNECTOR] Setting last_heartbeat_time")
         self._last_heartbeat_time = time.time()
+        print("[CONNECTOR] Getting payload")
         payload = event.get("data", event)
+        print(f"[CONNECTOR] payload = {payload}")
         payload["type"] = "heartbeat"
         payload["cmd"] = event.get("cmd")
+        print("[CONNECTOR] Payload prepared")
         
         # Отправляем в очередь событий
         try:
+            print("[CONNECTOR] Putting into event queue")
             self._event_queue.put_nowait(payload)
+            print("[CONNECTOR] Put into queue successful")
         except asyncio.QueueFull:
             logger.debug("Event queue full — dropping heartbeat")
+            print("[CONNECTOR] Queue full, dropped")
         
         # Вызываем зарегистрированные callback-и
+        print(f"[CONNECTOR] About to call {len(self._heartbeat_callbacks)} callbacks")
         logger.info(f"_on_heartbeat: Calling {len(self._heartbeat_callbacks)} heartbeat callbacks")
         for i, cb in enumerate(self._heartbeat_callbacks):
             try:
