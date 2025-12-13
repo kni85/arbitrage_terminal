@@ -235,6 +235,9 @@ function qsutils.connect(response_host, response_port, callback_host, callback_p
         response_client = getResponseServer()
         callback_client = getCallbackClient()
         if response_client and callback_client then
+            -- Важно: делаем receive неблокирующим, иначе do_main() застрянет в receiveRequest()
+            -- и heartbeat будет уходить только когда приходят команды (например, при нажатии Set).
+            pcall(response_client.settimeout, response_client, 0)
             is_connected = true
             log('QUIK# client connected', 1)
         end
@@ -260,7 +263,7 @@ function receiveRequest()
     if not is_connected then
         return nil, "not conencted"
     end
-    local status, requestString= pcall(response_client.receive, response_client)
+    local status, requestString, err, partial = pcall(response_client.receive, response_client)
     if status and requestString then
         local msg_table, err = from_json(requestString)
         if err then
@@ -270,6 +273,14 @@ function receiveRequest()
             return msg_table
         end
     else
+        -- Неблокирующий режим: таймаут не означает разрыв соединения.
+        if status and err == "timeout" then
+            return nil
+        end
+        -- Иногда LuaSocket возвращает partial; его тоже считаем "пока нет полного сообщения"
+        if status and partial and partial ~= "" then
+            return nil
+        end
         disconnected()
         return nil, err
     end
