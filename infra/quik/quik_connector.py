@@ -515,6 +515,7 @@ class QuikConnector:
     def _on_heartbeat(self, event):
         """Обработчик heartbeat от QUIK."""
         import time
+        print(f"[CONNECTOR] _on_heartbeat called with event: {event}")
         logger.info(f"_on_heartbeat called with event: {event}")
         self._last_heartbeat_time = time.time()
         payload = event.get("data", event)
@@ -542,9 +543,11 @@ class QuikConnector:
     
     def register_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
         """Зарегистрировать callback для heartbeat событий."""
+        print(f"[CONNECTOR] Registering heartbeat callback: {cb}, total callbacks: {len(self._heartbeat_callbacks)}")
         logger.info(f"Registering heartbeat callback: {cb}, total callbacks: {len(self._heartbeat_callbacks)}")
         if cb not in self._heartbeat_callbacks:
             self._heartbeat_callbacks.append(cb)
+            print(f"[CONNECTOR] Callback registered, new total: {len(self._heartbeat_callbacks)}")
             logger.info(f"Callback registered, new total: {len(self._heartbeat_callbacks)}")
     
     def unregister_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
