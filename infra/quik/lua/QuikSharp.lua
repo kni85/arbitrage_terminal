@@ -51,6 +51,22 @@ package.path = package.path .. ";" .. script_path .. "\\?.lua;" .. script_path .
 package.cpath = package.cpath .. ";" .. script_path .. libPath .. '?.dll'..";".. '.' .. libPath .. '?.dll'
 
 local util = require("qsutils")
+
+-- Определяем send_heartbeat ДО загрузки qsfunctions, чтобы она была доступна
+function send_heartbeat()
+    log("send_heartbeat() called", 0)
+    local msg = {}
+    msg.cmd = "Heartbeat"
+    msg.t = util.timemsec()
+    msg.data = {
+        server_time = getInfoParam("SERVERTIME"),
+        script_time = os.date("%Y-%m-%d %H:%M:%S")
+    }
+    log("Sending heartbeat: " .. to_json(msg), 0)
+    local result = util.sendCallback(msg)
+    log("sendCallback result: " .. tostring(result), 0)
+end
+
 local qf = require("qsfunctions")
 require("qscallbacks")
 
@@ -70,20 +86,6 @@ local callback_port = response_port + 1
 -- Heartbeat settings (global to allow qsfunctions to modify)
 heartbeat_interval = 10000  -- default 10 seconds in milliseconds
 local last_heartbeat = 0
-
-function send_heartbeat()
-    log("send_heartbeat() called", 0)
-    local msg = {}
-    msg.cmd = "Heartbeat"
-    msg.t = util.timemsec()
-    msg.data = {
-        server_time = getInfoParam("SERVERTIME"),
-        script_time = os.date("%Y-%m-%d %H:%M:%S")
-    }
-    log("Sending heartbeat: " .. to_json(msg), 0)
-    local result = util.sendCallback(msg)
-    log("sendCallback result: " .. tostring(result), 0)
-end
 
 function do_main()
     log("Entered main function", 0)
