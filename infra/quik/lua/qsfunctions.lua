@@ -57,6 +57,13 @@ function qsfunctions.SetHeartbeat(msg)
         heartbeat_interval = interval
         msg.data = {result = 0, message = "Heartbeat interval set to " .. interval .. " ms"}
         log("Heartbeat interval set to " .. interval .. " ms", 0)
+        -- Сразу отправляем heartbeat для проверки
+        if send_heartbeat then
+            log("Sending immediate heartbeat after interval change", 0)
+            send_heartbeat()
+        else
+            log("send_heartbeat function not found!", 3)
+        end
     else
         msg.data = {result = -1, message = "Invalid heartbeat interval"}
         log("Invalid heartbeat interval: " .. tostring(interval), 3)
