@@ -528,20 +528,24 @@ class QuikConnector:
             logger.debug("Event queue full — dropping heartbeat")
         
         # Вызываем зарегистрированные callback-и
-        logger.info(f"Calling {len(self._heartbeat_callbacks)} heartbeat callbacks")
-        for cb in self._heartbeat_callbacks:
+        logger.info(f"_on_heartbeat: Calling {len(self._heartbeat_callbacks)} heartbeat callbacks")
+        for i, cb in enumerate(self._heartbeat_callbacks):
             try:
+                logger.info(f"Calling callback {i}: {cb}")
                 if asyncio.iscoroutinefunction(cb) and self._main_loop:
                     asyncio.run_coroutine_threadsafe(cb(payload), self._main_loop)
                 else:
                     cb(payload)
+                logger.info(f"Callback {i} called successfully")
             except Exception as exc:
                 logger.exception("Heartbeat callback error: %s", exc)
     
     def register_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
         """Зарегистрировать callback для heartbeat событий."""
+        logger.info(f"Registering heartbeat callback: {cb}, total callbacks: {len(self._heartbeat_callbacks)}")
         if cb not in self._heartbeat_callbacks:
             self._heartbeat_callbacks.append(cb)
+            logger.info(f"Callback registered, new total: {len(self._heartbeat_callbacks)}")
     
     def unregister_heartbeat_callback(self, cb: Callable[[dict[str, Any]], None]) -> None:
         """Удалить callback для heartbeat событий."""
