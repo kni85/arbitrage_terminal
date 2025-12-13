@@ -72,6 +72,7 @@ heartbeat_interval = 10000  -- default 10 seconds in milliseconds
 local last_heartbeat = 0
 
 function send_heartbeat()
+    log("send_heartbeat() called", 0)
     local msg = {}
     msg.cmd = "Heartbeat"
     msg.t = util.timemsec()
@@ -79,7 +80,9 @@ function send_heartbeat()
         server_time = getInfoParam("SERVERTIME"),
         script_time = os.date("%Y-%m-%d %H:%M:%S")
     }
-    util.sendCallback(msg)
+    log("Sending heartbeat: " .. to_json(msg), 0)
+    local result = util.sendCallback(msg)
+    log("sendCallback result: " .. tostring(result), 0)
 end
 
 function do_main()
@@ -91,9 +94,13 @@ function do_main()
         
         -- Check if heartbeat should be sent
         local now = os.clock() * 1000
-        if (now - last_heartbeat) >= heartbeat_interval then
+        local elapsed = now - last_heartbeat
+        if elapsed >= heartbeat_interval then
+            log("Heartbeat timer triggered. Elapsed: " .. elapsed .. "ms, interval: " .. heartbeat_interval .. "ms, connected: " .. tostring(util.is_connected), 0)
             if util.is_connected then
                 send_heartbeat()
+            else
+                log("Skipping heartbeat - not connected", 1)
             end
             last_heartbeat = now
         end
