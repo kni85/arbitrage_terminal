@@ -48,6 +48,11 @@ let ws = null;
             if (msg.type === 'heartbeat' && window.onHeartbeat) {
                 window.onHeartbeat(msg.data);
             }
+            if (msg.type === 'heartbeat_config' && window.onHeartbeat) {
+                // При успешной установке интервала также обновляем статус
+                console.log('[Heartbeat] Config response:', msg.data);
+                window.onHeartbeat(msg.data);
+            }
         };
 
         ws.onclose = () => {
@@ -212,6 +217,10 @@ function ensureWsOrderAndSend(payload){
         wsOrder.onmessage = (ev) => {
             const msg = JSON.parse(ev.data);
             if (msg.type === 'heartbeat' && window.onHeartbeat) {
+                window.onHeartbeat(msg.data);
+            }
+            if (msg.type === 'heartbeat_config' && window.onHeartbeat) {
+                console.log('[Heartbeat] Config response:', msg.data);
                 window.onHeartbeat(msg.data);
             }
             handleWsOrderMessage(ev);
@@ -1417,6 +1426,10 @@ function connectAsset(row, idx, cfg){
         if (msg.type === 'heartbeat' && window.onHeartbeat) {
             window.onHeartbeat(msg.data);
         }
+        if (msg.type === 'heartbeat_config' && window.onHeartbeat) {
+            console.log('[Heartbeat] Config response:', msg.data);
+            window.onHeartbeat(msg.data);
+        }
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
@@ -2312,6 +2325,7 @@ function removeRowFromLocalStorage(tableType, id, tr){
     // Настройка интервала
     setButton.onclick = function() {
         const interval = parseInt(intervalInput.value, 10);
+        console.log('[Heartbeat] Set button clicked, interval:', interval);
         if (interval < 1 || interval > 60) {
             alert('Interval must be between 1 and 60 seconds');
             return;
@@ -2320,13 +2334,17 @@ function removeRowFromLocalStorage(tableType, id, tr){
         // Отправляем через любой открытый WebSocket
         // Попробуем найти активное соединение
         const ws = findActiveWebSocket();
+        console.log('[Heartbeat] Active WebSocket:', ws, 'readyState:', ws?.readyState);
         if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
+            const payload = {
                 action: 'set_heartbeat',
                 interval: interval * 1000  // convert to milliseconds
-            }));
+            };
+            console.log('[Heartbeat] Sending:', payload);
+            ws.send(JSON.stringify(payload));
             statusEl.textContent = `Setting interval to ${interval}s...`;
         } else {
+            console.log('[Heartbeat] No active WebSocket connection');
             alert('No active WebSocket connection. Please start quotes first.');
         }
     };
