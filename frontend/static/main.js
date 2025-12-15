@@ -1232,6 +1232,12 @@ function addPairsRow(data){
             default:
                 td = document.createElement('td');
         }
+        // Применяем ширину заголовка к ячейке, чтобы содержимое не расширяло колонку
+        const ths = document.querySelectorAll('#pairs_table thead th');
+        if(ths[idx] && ths[idx].style.width){
+            td.style.width = ths[idx].style.width;
+            td.style.maxWidth = ths[idx].style.width;
+        }
         row.appendChild(td);
     });
 
@@ -1473,12 +1479,36 @@ function enablePairsDragDrop(){
         });
         table.insertBefore(colgroup, table.firstElementChild); // before thead
     }
+    
+    // Проверяем, есть ли сохранённые ширины колонок
+    const savedWidths = localStorage.getItem('pairs_col_widths');
+    const hasSavedWidths = savedWidths && JSON.parse(savedWidths).length > 0;
+    
     const headers = table.querySelectorAll('thead th');
-    headers.forEach(th=>{
+    headers.forEach((th, idx)=>{
         th.draggable = true;
-        // зафиксируем текущую ширину как стартовую, чтобы ресайз был видим
-        const w = th.getBoundingClientRect().width;
-        if(w){ const initW = Math.max(40, Math.floor(w)); th.style.width = initW + 'px'; th.style.maxWidth = initW + 'px'; }
+        
+        // Ширина по умолчанию: ширина текста заголовка + отступы (если нет сохранённых ширин)
+        if(!hasSavedWidths){
+            // Вычисляем ширину текста заголовка
+            const headerText = th.textContent.trim();
+            const tempSpan = document.createElement('span');
+            tempSpan.style.visibility = 'hidden';
+            tempSpan.style.position = 'absolute';
+            tempSpan.style.whiteSpace = 'nowrap';
+            tempSpan.style.font = window.getComputedStyle(th).font;
+            tempSpan.textContent = headerText;
+            document.body.appendChild(tempSpan);
+            const textWidth = tempSpan.getBoundingClientRect().width;
+            document.body.removeChild(tempSpan);
+            // Добавляем padding (10px*2) + небольшой запас для resizer
+            const initW = Math.max(40, Math.ceil(textWidth) + 30);
+            th.style.width = initW + 'px';
+            th.style.maxWidth = initW + 'px';
+            if(colgroup && colgroup.children[idx]){
+                colgroup.children[idx].style.width = initW + 'px';
+            }
+        }
         th.style.minWidth = '0';
         th.addEventListener('dragstart', e=>{
             e.dataTransfer.setData('colIndex', th.cellIndex);
@@ -1539,13 +1569,21 @@ function enablePairsDragDrop(){
         resizer.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); });
     });
     // При инициализации, если есть сохранённые ширины – применим
-    restorePairsWidths();
+    if(hasSavedWidths){
+        restorePairsWidths();
+    } else {
+        // Сохраняем начальные ширины (по ширине заголовков) в localStorage
+        savePairsWidths();
+    }
     // синхронизируем ширины тела при первой загрузке
     const thsInit = table.querySelectorAll('thead th');
     const rowsInit = table.querySelectorAll('#pairs_table tbody tr');
     rowsInit.forEach(tr=>{
         thsInit.forEach((th, i)=>{
-            if(tr.cells[i]) tr.cells[i].style.width = th.style.width || '';
+            if(tr.cells[i]){
+                tr.cells[i].style.width = th.style.width || '';
+                tr.cells[i].style.maxWidth = th.style.width || '';
+            }
         });
     });
 }
