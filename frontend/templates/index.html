@@ -59,6 +59,23 @@
         .heartbeat-indicator.ok { background: #d4edda; border-color: #c3e6cb; color: #155724; }
         .heartbeat-indicator.warning { background: #fff3cd; border-color: #ffeeba; color: #856404; }
         .heartbeat-indicator.error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        
+        /* Modal */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 500px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; }
+        .modal-header { padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h3 { margin: 0; font-size: 18px; }
+        .modal-close { background: none; border: none; font-size: 28px; line-height: 20px; color: #999; cursor: pointer; padding: 0; width: 30px; height: 30px; }
+        .modal-close:hover { color: #333; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+        .modal-footer { padding: 12px 20px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; gap: 10px; }
+        
+        /* Sortable list */
+        .sortable-list { list-style: none; padding: 0; margin: 0; }
+        .sortable-list li { padding: 12px 16px; margin-bottom: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; cursor: move; user-select: none; display: flex; align-items: center; }
+        .sortable-list li:hover { background: #e9ecef; }
+        .sortable-list li.dragging { opacity: 0.5; }
+        .sortable-list li::before { content: '☰'; margin-right: 12px; color: #6c757d; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -178,7 +195,8 @@
     <div id="tab5" class="tab-content">
         <h3>Pair arbitrage configurations</h3>
         <div style="margin-bottom: 10px;">
-            <button id="reset_column_widths">Reset column widths</button>
+            <button id="reset_column_widths">Reset columns to default</button>
+            <button id="open_column_sorting">Column sorting</button>
         </div>
         <table id="pairs_table" class="codes-table">
             <thead>
@@ -246,6 +264,24 @@
     <div id="pairs_menu" class="context-menu">
         <button id="pairs_add">Add row</button>
         <button id="pairs_del">Delete row</button>
+    </div>
+
+    <!-- Column sorting modal -->
+    <div id="column_sorting_modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Column Sorting</h3>
+                <button id="close_column_sorting" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 10px; color: #666;">Drag columns to reorder them:</p>
+                <ul id="sortable_columns" class="sortable-list"></ul>
+            </div>
+            <div class="modal-footer">
+                <button id="apply_column_sorting">Apply</button>
+                <button id="cancel_column_sorting">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/main.js?v=20250826-tab-fix"></script>

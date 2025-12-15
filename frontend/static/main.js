@@ -2161,6 +2161,107 @@ window.addEventListener('load', async ()=>{
             location.reload();
         }
     };
+    
+    // Column sorting modal
+    const columnSortingModal = document.getElementById('column_sorting_modal');
+    const sortableColumns = document.getElementById('sortable_columns');
+    let originalColumnOrder = [];
+    
+    document.getElementById('open_column_sorting').onclick = () => {
+        // Get current column order
+        const headers = document.querySelectorAll('#pairs_table thead th');
+        originalColumnOrder = Array.from(headers).map(th => ({
+            id: th.dataset.col,
+            text: th.textContent.trim()
+        }));
+        
+        // Populate sortable list
+        sortableColumns.innerHTML = '';
+        originalColumnOrder.forEach(col => {
+            const li = document.createElement('li');
+            li.draggable = true;
+            li.dataset.colId = col.id;
+            li.textContent = col.text;
+            sortableColumns.appendChild(li);
+        });
+        
+        // Enable drag and drop
+        enableSortableDragDrop();
+        
+        // Show modal
+        columnSortingModal.style.display = 'flex';
+    };
+    
+    document.getElementById('close_column_sorting').onclick = () => {
+        columnSortingModal.style.display = 'none';
+    };
+    
+    document.getElementById('cancel_column_sorting').onclick = () => {
+        columnSortingModal.style.display = 'none';
+    };
+    
+    document.getElementById('apply_column_sorting').onclick = () => {
+        // Get new order from the list
+        const items = sortableColumns.querySelectorAll('li');
+        const newOrder = Array.from(items).map(li => li.dataset.colId);
+        
+        // Apply the new order
+        newOrder.forEach((colId, targetIdx) => {
+            const currentIdx = colIndexById(colId);
+            if(currentIdx >= 0 && currentIdx !== targetIdx) {
+                movePairsColumn(currentIdx, targetIdx);
+            }
+        });
+        
+        // Save to localStorage and server
+        savePairsOrder();
+        savePairsTable();
+        
+        // Close modal
+        columnSortingModal.style.display = 'none';
+    };
+    
+    // Close modal on background click
+    columnSortingModal.onclick = (e) => {
+        if(e.target === columnSortingModal) {
+            columnSortingModal.style.display = 'none';
+        }
+    };
+    
+    function enableSortableDragDrop() {
+        const items = sortableColumns.querySelectorAll('li');
+        let draggedItem = null;
+        
+        items.forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                draggedItem = item;
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            
+            item.addEventListener('dragend', (e) => {
+                item.classList.remove('dragging');
+                draggedItem = null;
+            });
+            
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                
+                if(draggedItem && draggedItem !== item) {
+                    // Determine if we should insert before or after
+                    const rect = item.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    
+                    if(e.clientY < midY) {
+                        sortableColumns.insertBefore(draggedItem, item);
+                    } else {
+                        sortableColumns.insertBefore(draggedItem, item.nextSibling);
+                    }
+                }
+            });
+        });
+    }
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)
