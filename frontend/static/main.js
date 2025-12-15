@@ -1483,6 +1483,7 @@ function enablePairsDragDrop(){
     // Проверяем, есть ли сохранённые ширины колонок
     const savedWidths = localStorage.getItem('pairs_col_widths');
     const hasSavedWidths = savedWidths && JSON.parse(savedWidths).length > 0;
+    console.log('enablePairsDragDrop: hasSavedWidths =', hasSavedWidths, 'savedWidths =', savedWidths);
     
     const headers = table.querySelectorAll('thead th');
     headers.forEach((th, idx)=>{
@@ -1503,6 +1504,7 @@ function enablePairsDragDrop(){
             document.body.removeChild(tempSpan);
             // Добавляем padding (10px*2) + небольшой запас для resizer
             const initW = Math.max(40, Math.ceil(textWidth) + 30);
+            console.log(`Column "${headerText}": text width=${textWidth.toFixed(1)}, set width=${initW}`);
             th.style.width = initW + 'px';
             th.style.maxWidth = initW + 'px';
             if(colgroup && colgroup.children[idx]){
@@ -2142,6 +2144,23 @@ window.addEventListener('load', async ()=>{
     
     // ВОССТАНАВЛИВАЕМ вкладку пользователя (не серверную)
     activate(isNaN(userTab)?1:userTab);
+    
+    // Reset column widths button
+    document.getElementById('reset_column_widths').onclick = async () => {
+        if(confirm('Reset all column widths to default (header text width)? This will reload the page.')){
+            // Remove from localStorage
+            localStorage.removeItem('pairs_col_widths');
+            localStorage.removeItem('pairs_col_order');
+            localStorage.removeItem('pairs_columns');
+            // Remove from database
+            try {
+                await deleteJson(`${API_BASE}/columns/`);
+            } catch(e) {
+                console.warn('Failed to delete columns from server:', e);
+            }
+            location.reload();
+        }
+    };
 });
 
 // Коммит строки в БД (POST пустой/частичной строки, затем PATCH по id)

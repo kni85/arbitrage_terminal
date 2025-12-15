@@ -91,3 +91,14 @@ async def delete_column(col_id: int, session: AsyncSession = Depends(get_session
     await session.delete(col)
     await session.commit()
     return None
+
+
+@router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_columns(session: AsyncSession = Depends(get_session)):
+    """Delete all column settings (reset to default)."""
+    res = await session.execute(select(ColumnModel))
+    columns = res.scalars().all()
+    for col in columns:
+        await session.delete(col)
+    await session.commit()
+    return None
