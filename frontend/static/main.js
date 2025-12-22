@@ -1159,58 +1159,45 @@ function addPairsRow(data){
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
                                 btn.addEventListener('click', async ()=>{ 
-                    console.log('Reset clicked - before changes:', {
-                        exec_price: cellById(row,'exec_price').textContent,
-                        exec_qty: cellById(row,'exec_qty').textContent,
-                        error: cellById(row,'error').textContent
-                    });
-                    
+                    // Сбрасываем значения
                     cellById(row,'exec_price').textContent=''; 
                     cellById(row,'exec_qty').textContent='0'; 
                     updateLeaves(row); 
                     
-                    // Очищаем все ошибки (включая ошибки о ценах)
+                    // Очищаем все ошибки
                     const errorCell = cellById(row,'error');
                     if (errorCell) {
                         errorCell.textContent = '';
                     }
                     
-                    // Валидируем активы и аккаунты (НЕ вызываем updateHitPrice чтобы не восстановить price errors)
-                    validateAllFieldsInRow(row); 
-                    
-                    // Принудительно очищаем hit_price (без проверки цен)
+                    // Принудительно очищаем hit_price
                     cellById(row,'hit_price').textContent = '';
                     
-                    console.log('Reset clicked - after validation:', {
-                        exec_price: cellById(row,'exec_price').textContent,
-                        exec_qty: cellById(row,'exec_qty').textContent,
-                        error: cellById(row,'error').textContent,
-                        hit_price: cellById(row,'hit_price').textContent
-                    });
+                    // Валидируем активы и аккаунты
+                    validateAllFieldsInRow(row);
                     
-                    // TODO: Implement trades clearing when backend endpoint is ready
-                    // const rowId = row.dataset.id;
-                    // if (rowId) {
-                    //     try {
-                    //         await deleteJson(`${API_BASE}/pairs/${rowId}/trades`);
-                    //         console.log('Reset - cleared trades from DB for pair', rowId);
-                    //     } catch (e) {
-                    //         console.warn('Reset - failed to clear trades:', e);
-                    //     }
-                    // }
-                    
-                    // Сохранить изменения в БД после обновления DOM
-                    setTimeout(() => {
-                        console.log('Reset - saving to DB:', {
-                            error: cellById(row,'error').textContent
-                        });
-                        savePairsTable();
+                    // Немедленно сохраняем в БД (без задержек)
+                    const rowId = row.dataset.id;
+                    if (rowId) {
+                        // Формируем payload напрямую для немедленной отправки
+                        const payload = {
+                            exec_price: null,
+                            exec_qty: 0,
+                            leaves_qty: parseInt(cellById(row,'target_qty').textContent) || null,
+                            error: '',
+                            hit_price: null
+                        };
                         
-                        // После сохранения можно пересчитать hit_price (если нужно)
-                        setTimeout(() => {
-                            updateHitPrice(row);
-                        }, 50);
-                    }, 10);
+                        try {
+                            await patchJson(`${API_BASE}/pairs/${rowId}`, payload);
+                            console.log('Reset - saved to DB:', payload);
+                        } catch (e) {
+                            console.warn('Reset - failed to save:', e);
+                        }
+                    }
+                    
+                    // После сохранения пересчитываем hit_price
+                    updateHitPrice(row);
                 });
                 break;
             case 'started':
