@@ -1159,6 +1159,12 @@ function addPairsRow(data){
                 td = document.createElement('td');
                 const btn = document.createElement('button'); btn.textContent='Reset'; td.appendChild(btn);
                                 btn.addEventListener('click', async ()=>{ 
+                    const rowId = row.dataset.id;
+                    console.log('=== RESET BUTTON CLICKED ===', {rowId});
+                    
+                    // Устанавливаем флаг, что идёт Reset (блокирует перезапись exec_price/exec_qty)
+                    row._isResetting = true;
+                    
                     // Сбрасываем значения
                     cellById(row,'exec_price').textContent=''; 
                     cellById(row,'exec_qty').textContent='0'; 
@@ -1177,7 +1183,6 @@ function addPairsRow(data){
                     validateAllFieldsInRow(row);
                     
                     // Немедленно сохраняем в БД (без задержек)
-                    const rowId = row.dataset.id;
                     if (rowId) {
                         // Формируем payload напрямую для немедленной отправки
                         const payload = {
@@ -1188,16 +1193,45 @@ function addPairsRow(data){
                             hit_price: null
                         };
                         
+                        console.log('Reset - sending PATCH to DB:', payload);
+                        
                         try {
-                            await patchJson(`${API_BASE}/pairs/${rowId}`, payload);
-                            console.log('Reset - saved to DB:', payload);
+                            const result = await patchJson(`${API_BASE}/pairs/${rowId}`, payload);
+                            console.log('Reset - PATCH response:', result);
+                            
+                            // Обновляем localStorage тоже
+                            const lsData = localStorage.getItem('pairs_table');
+                            if(lsData) {
+                                const pairs = JSON.parse(lsData);
+                                const pairIndex = pairs.findIndex(p => p.id === parseInt(rowId));
+                                if(pairIndex >= 0) {
+                                    pairs[pairIndex].exec_price = null;
+                                    pairs[pairIndex].exec_qty = 0;
+                                    pairs[pairIndex].leaves_qty = payload.leaves_qty;
+                                    pairs[pairIndex].error = '';
+                                    pairs[pairIndex].hit_price = null;
+                                    localStorage.setItem('pairs_table', JSON.stringify(pairs));
+                                    console.log('Reset - updated localStorage');
+                                }
+                            }
+                            
+                            // Снимаем флаг Reset через 2 секунды (даём время БД обновиться)
+                            setTimeout(() => {
+                                row._isResetting = false;
+                                console.log('Reset - flag cleared');
+                            }, 2000);
                         } catch (e) {
-                            console.warn('Reset - failed to save:', e);
+                            console.error('Reset - PATCH failed:', e);
+                            row._isResetting = false;
                         }
+                    } else {
+                        console.warn('Reset - no rowId, cannot save to DB');
+                        row._isResetting = false;
                     }
                     
                     // После сохранения пересчитываем hit_price
                     updateHitPrice(row);
+                    console.log('=== RESET COMPLETE ===');
                 });
                 break;
             case 'started':
@@ -1889,6 +1923,15 @@ function savePairsTable(){
                 // Use stored timestamp from WebSocket or fallback to cell text
                 obj[col] = tr._md_dt_2 || (cell.textContent.trim() || null); 
                 return; 
+            }
+            // Если идёт Reset, не перезаписываем exec_price и exec_qty
+            if(tr._isResetting && (col==='exec_price' || col==='exec_qty' || col==='leaves_qty' || col==='error' || col==='hit_price')) {
+                // Пропускаем - оставляем сброшенные значения
+                if(col==='exec_price') { obj[col] = null; return; }
+                if(col==='exec_qty') { obj[col] = 0; return; }
+                if(col==='leaves_qty') { obj[col] = parseInt(cellById(tr,'target_qty').textContent) || null; return; }
+                if(col==='error') { obj[col] = ''; return; }
+                if(col==='hit_price') { obj[col] = null; return; }
             }
             obj[col] = cell.textContent;
         });
