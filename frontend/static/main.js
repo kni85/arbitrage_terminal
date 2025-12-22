@@ -1334,13 +1334,13 @@ let savePairsTimeout = null;
 let isSavingPairs = false;
 pairsTbody.addEventListener('input', e=>{ 
     if(e.target.closest('td') && !isSavingPairs) {
-        // Debounce: wait 300ms after last input before saving
+        // Debounce: wait 1000ms after last input before saving
         clearTimeout(savePairsTimeout);
         savePairsTimeout = setTimeout(() => {
             isSavingPairs = true;
             savePairsTable();
-            setTimeout(() => { isSavingPairs = false; }, 500);
-        }, 300);
+            setTimeout(() => { isSavingPairs = false; }, 1000);
+        }, 1000);
     }
 });
 
@@ -2035,7 +2035,32 @@ async function syncSetting(key,value){
     else if(found.value!==value){ await patchJson(`${API_BASE}/settings/${found.id}`,{value}); }
 }
 
+let _syncPairsInProgress = false;
+let _syncPairsPending = null;
+
 async function syncPairs(rows){
+    // Блокировка параллельного выполнения
+    if(_syncPairsInProgress) {
+        console.log('syncPairs already in progress, queueing...');
+        _syncPairsPending = rows;
+        return;
+    }
+    
+    _syncPairsInProgress = true;
+    try {
+        await _syncPairsImpl(rows);
+    } finally {
+        _syncPairsInProgress = false;
+        // Если были отложенные вызовы, выполняем последний
+        if(_syncPairsPending) {
+            const pending = _syncPairsPending;
+            _syncPairsPending = null;
+            setTimeout(() => syncPairs(pending), 100);
+        }
+    }
+}
+
+async function _syncPairsImpl(rows){
     // Получаем список пар с сервера один раз – строим карту по id и по ключу
     let serverPairs = [];
     try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
