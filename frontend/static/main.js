@@ -1329,8 +1329,20 @@ function restorePairsTable(){
     restorePairsWidths();
 }
 
-// On-the-fly input
-pairsTbody.addEventListener('input', e=>{ if(e.target.closest('td')) savePairsTable(); });
+// On-the-fly input (with recursion protection)
+let savePairsTimeout = null;
+let isSavingPairs = false;
+pairsTbody.addEventListener('input', e=>{ 
+    if(e.target.closest('td') && !isSavingPairs) {
+        // Debounce: wait 300ms after last input before saving
+        clearTimeout(savePairsTimeout);
+        savePairsTimeout = setTimeout(() => {
+            isSavingPairs = true;
+            savePairsTable();
+            setTimeout(() => { isSavingPairs = false; }, 500);
+        }, 300);
+    }
+});
 
 // ------------- Trading helpers ----------------------------
 function checkRowForTrade(row){
@@ -2107,19 +2119,33 @@ async function syncPairs(rows){
                 serverByKey[newKey] = patched;
             }
         } else {
-            // CREATE new pair (no ID exists)
-            if(!payloadClean.asset_1 || !payloadClean.asset_2){ continue; }
-            const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
-            if(created && created.id){ 
-                serverById[created.id] = created;
-                const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
-                serverByKey[newKey] = created;
-                
-                // Update DOM with new ID and update the row object
+            // CREATE new pair (no ID exists) - check if already exists by key
+            const pairKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
+            const existingByKey = serverByKey[pairKey];
+            
+            if(existingByKey && existingByKey.id) {
+                // Pair already exists on server by key - just update DOM with existing ID
+                console.log(`Pair ${pairKey} already exists with id=${existingByKey.id}, skipping creation`);
                 if(pairsTbody.rows[i]) {
-                    pairsTbody.rows[i].dataset.id = String(created.id);
+                    pairsTbody.rows[i].dataset.id = String(existingByKey.id);
                 }
-                rows[i].id = created.id; // Update the row object too
+                rows[i].id = existingByKey.id;
+                serverById[existingByKey.id] = existingByKey;
+            } else {
+                // CREATE new pair
+                if(!payloadClean.asset_1 || !payloadClean.asset_2){ continue; }
+                const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
+                if(created && created.id){ 
+                    serverById[created.id] = created;
+                    const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
+                    serverByKey[newKey] = created;
+                    
+                    // Update DOM with new ID and update the row object
+                    if(pairsTbody.rows[i]) {
+                        pairsTbody.rows[i].dataset.id = String(created.id);
+                    }
+                    rows[i].id = created.id; // Update the row object too
+                }
             }
         }
     }
