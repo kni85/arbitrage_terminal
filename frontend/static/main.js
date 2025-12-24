@@ -2067,6 +2067,7 @@ async function syncSetting(key,value){
 
 let _syncPairsInProgress = false;
 let _syncPairsPending = null;
+let _isInitialLoad = true; // Флаг первой загрузки
 
 async function syncPairs(rows){
     // Блокировка параллельного выполнения
@@ -2103,24 +2104,24 @@ async function _syncPairsImpl(rows){
     const uiKeys = new Set(rows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}`));
     
     // --- DELETE pairs that were removed on UI ---
-    for(const [serverId, serverPair] of Object.entries(serverById)){
-        const serverKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
-        // Удаляем только если нет ни id, ни ключа в UI
-        if(!uiIds.has(parseInt(serverId)) && !uiKeys.has(serverKey)){
-            console.warn(`syncPairs: Would delete pair ${serverId} (${serverKey}) - not found in UI`, {
-                uiIds: Array.from(uiIds),
-                uiKeys: Array.from(uiKeys),
-                serverPair
-            });
-            // ВРЕМЕННО ОТКЛЮЧЕНО: автоматическое удаление для диагностики
-            // try {
-            //     await deleteJson(`${API_BASE}/pairs/${serverId}`);
-            //     delete serverById[serverId];
-            //     delete serverByKey[serverKey];
-            // } catch(e) {
-            //     console.warn(`Failed to delete pair ${serverId}:`, e);
-            // }
+    // НЕ удаляем во время первой загрузки страницы
+    if(!_isInitialLoad) {
+        for(const [serverId, serverPair] of Object.entries(serverById)){
+            const serverKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
+            // Удаляем только если нет ни id, ни ключа в UI
+            if(!uiIds.has(parseInt(serverId)) && !uiKeys.has(serverKey)){
+                console.log(`syncPairs: Deleting pair ${serverId} (${serverKey}) - not found in UI`);
+                try {
+                    await deleteJson(`${API_BASE}/pairs/${serverId}`);
+                    delete serverById[serverId];
+                    delete serverByKey[serverKey];
+                } catch(e) {
+                    console.warn(`Failed to delete pair ${serverId}:`, e);
+                }
+            }
         }
+    } else {
+        console.log('syncPairs: Skipping auto-delete during initial load');
     }
 
     // --- CREATE / UPDATE current rows ---
@@ -2228,6 +2229,12 @@ window.addEventListener('load', async ()=>{
     restorePairsTable(); // строки после порядка, внутри вызовет restorePairsWidths
     enablePairsDragDrop();
     Array.from(pairsTbody.rows).forEach(r=>{ if(r._pendingStart){ delete r._pendingStart; startRowFeeds(r);} });
+    
+    // ПОСЛЕ полной загрузки снимаем флаг начальной загрузки
+    setTimeout(() => {
+        _isInitialLoad = false;
+        console.log('Initial load complete, auto-delete enabled');
+    }, 2000);
     
     // ВОССТАНАВЛИВАЕМ вкладку пользователя (не серверную)
     activate(isNaN(userTab)?1:userTab);
