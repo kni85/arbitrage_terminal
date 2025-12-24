@@ -1853,10 +1853,6 @@ async function backendSync(){
         if(server===null) throw new Error('no server');
         // сохраняем как есть (включая id), даже если пусто
         localStorage.setItem('pairs_table', JSON.stringify(server));
-        // build map asset1|asset2 -> pair object
-        window._pairsIdMap = Object.fromEntries((server||[]).map(p=>[`${p.asset_1}|${p.asset_2}`, p]));
-        // и кэш по ключу asset1|asset2|id, чтобы исключить коллизии
-        window._pairsByKey = Object.fromEntries((server||[]).map(p=>[`${p.asset_1||''}|${p.asset_2||''}|${p.id}`, p]));
     }catch(_){}
 }
 // ---------------------------------------------------------------------
@@ -2092,29 +2088,24 @@ async function syncPairs(rows){
 }
 
 async function _syncPairsImpl(rows){
-    // Получаем список пар с сервера один раз – строим карту по id и по ключу
+    // Получаем список пар с сервера один раз – строим карту только по id
     let serverPairs = [];
     try{ serverPairs = await fetchJson(`${API_BASE}/pairs`)||[]; }catch(_){}
     const serverById = Object.fromEntries(serverPairs.map(p=>[p.id, p]));
-    const serverByKey = Object.fromEntries(serverPairs.map(p=>[`${p.asset_1}|${p.asset_2}|${p.strategy_name}|${p.side_1}`, p]));
-    window._pairsIdMap = serverByKey; // для последующих шагов (ERR-2.2)
 
     // rows теперь уже объекты с id из savePairsTable
     const uiIds = new Set(rows.filter(r => r.id).map(r => r.id));
-    const uiKeys = new Set(rows.map(r=>`${r.asset_1?.trim()||''}|${r.asset_2?.trim()||''}|${r.strategy_name?.trim()||''}|${r.side_1||''}`));
     
     // --- DELETE pairs that were removed on UI ---
     // НЕ удаляем во время первой загрузки страницы
+    // Удаляем ТОЛЬКО по ID - если ID есть на сервере, но нет в UI
     if(!_isInitialLoad) {
         for(const [serverId, serverPair] of Object.entries(serverById)){
-            const serverKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}|${serverPair.side_1}`;
-            // Удаляем только если нет ни id, ни ключа в UI
-            if(!uiIds.has(parseInt(serverId)) && !uiKeys.has(serverKey)){
-                console.log(`syncPairs: Deleting pair ${serverId} (${serverKey}) - not found in UI`);
+            if(!uiIds.has(parseInt(serverId))){
+                console.log(`syncPairs: Deleting pair id=${serverId} - not found in UI`);
                 try {
                     await deleteJson(`${API_BASE}/pairs/${serverId}`);
                     delete serverById[serverId];
-                    delete serverByKey[serverKey];
                 } catch(e) {
                     console.warn(`Failed to delete pair ${serverId}:`, e);
                 }
@@ -2167,53 +2158,28 @@ async function _syncPairsImpl(rows){
         });
 
         if(r.id && serverById[r.id]){
-            // UPDATE existing record by ID (handles strategy_name changes correctly)
+            // UPDATE existing record by ID
             const serverPair = serverById[r.id];
             const hdr = serverPair.updated_at ? {'If-Unmodified-Since': serverPair.updated_at}: {};
             const patched = await patchJson(`${API_BASE}/pairs/${r.id}`, payloadClean, hdr);
             if(patched) {
-                // Update caches
                 serverById[r.id] = patched;
-                // Remove old key and add new key
-                const oldKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
-                const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}`;
-                delete serverByKey[oldKey];
-                serverByKey[newKey] = patched;
             }
-        } else {
-            // CREATE new pair (no ID exists) - check if already exists by key
-            const pairKey = `${a1}|${a2}|${r.strategy_name?.trim()}|${r.side_1||''}`;
-            const existingByKey = serverByKey[pairKey];
-            
-            if(existingByKey && existingByKey.id) {
-                // Pair already exists on server by key - just update DOM with existing ID
-                console.log(`Pair ${pairKey} already exists with id=${existingByKey.id}, skipping creation`);
+        } else if(!r.id) {
+            // CREATE new pair (no ID exists) - ALWAYS create, no checks
+            if(!payloadClean.asset_1 || !payloadClean.asset_2){ continue; }
+            const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
+            if(created && created.id){ 
+                serverById[created.id] = created;
+                
+                // Update DOM with new ID and update the row object
                 if(pairsTbody.rows[i]) {
-                    pairsTbody.rows[i].dataset.id = String(existingByKey.id);
+                    pairsTbody.rows[i].dataset.id = String(created.id);
                 }
-                rows[i].id = existingByKey.id;
-                serverById[existingByKey.id] = existingByKey;
-            } else {
-                // CREATE new pair
-                if(!payloadClean.asset_1 || !payloadClean.asset_2){ continue; }
-                const created = await postJson(`${API_BASE}/pairs/`, payloadClean);
-                if(created && created.id){ 
-                    serverById[created.id] = created;
-                    const newKey = `${a1}|${a2}|${r.strategy_name?.trim()}|${r.side_1||''}`;
-                    serverByKey[newKey] = created;
-                    
-                    // Update DOM with new ID and update the row object
-                    if(pairsTbody.rows[i]) {
-                        pairsTbody.rows[i].dataset.id = String(created.id);
-                    }
-                    rows[i].id = created.id; // Update the row object too
-                }
+                rows[i].id = created.id; // Update the row object too
             }
         }
     }
-    
-    // Update global cache
-    window._pairsIdMap = serverByKey;
 }
 
 // Заменяем старый обработчик загрузки на async для синхронизации с сервером
@@ -2412,9 +2378,7 @@ async function ensureRowPersisted(tableType, tr){
                 window._accountIdMap = window._accountIdMap||{};
                 if(created.alias){ window._accountIdMap[created.alias] = created; }
             } else if(tableType==='pairs'){
-                window._pairsIdMap = window._pairsIdMap||{};
-                const key = `${created.asset_1||''}|${created.asset_2||''}|${created.strategy_name||''}|${created.side_1||''}`;
-                window._pairsIdMap[key] = created;
+                // Pairs now use only ID, no need for key-based map
             }
         }
     } else {
