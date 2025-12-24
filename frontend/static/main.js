@@ -1101,12 +1101,18 @@ function completeSetupAccountAutocomplete(cell) {
 // -------------------- Add row helper --------------------
 // Extract data from existing row for duplication
 function extractPairsRowData(row){
+    // Получаем текущий порядок колонок из заголовка
     const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
-    const data = [];
+    
+    // Создаём объект с данными по ключам колонок
+    const dataObj = {};
     
     order.forEach((colId, idx) => {
         const cell = row.cells[idx];
-        if(!cell) { data.push(''); return; }
+        if(!cell) { 
+            dataObj[colId] = '';
+            return; 
+        }
         
         switch(colId){
             case 'asset_1':
@@ -1120,12 +1126,12 @@ function extractPairsRowData(row){
             case 'price':
             case 'target_qty':
             case 'strategy_name':
-                data.push(cell.textContent.trim());
+                dataObj[colId] = cell.textContent.trim();
                 break;
             case 'side_1':
             case 'side_2':
                 const select = cell.querySelector('select');
-                data.push(select ? select.value : 'BUY');
+                dataObj[colId] = select ? select.value : 'BUY';
                 break;
             case 'exec_price':
             case 'exec_qty':
@@ -1137,32 +1143,37 @@ function extractPairsRowData(row){
             case 'hit_price':
             case 'error':
                 // Эти поля не копируем (они обнуляются для нового бота)
-                data.push('');
+                dataObj[colId] = '';
                 break;
             case 'get_mdata':
-                const cb = cell.querySelector('input[type="checkbox"]');
-                data.push(cb ? cb.checked : false);
+                // НЕ копируем get_mdata - новый бот создаётся с выключенной подпиской
+                dataObj[colId] = false;
                 break;
             case 'started':
                 // started не копируем - новый бот создаётся остановленным
-                data.push(false);
+                dataObj[colId] = false;
+                break;
+            case 'reset':
+                // reset - это кнопка, не копируем
+                dataObj[colId] = '';
                 break;
             default:
-                data.push('');
+                dataObj[colId] = '';
         }
     });
     
-    return data;
+    return dataObj;
 }
 
 function addPairsRow(data, insertAfterRow){
     // If insertAfterRow is provided, insert after that row, otherwise append to end
     let row;
     if(insertAfterRow){
-        // rowIndex is the index in the tbody (0-based)
-        // We want to insert AFTER the current row, so add 1
-        const afterIndex = insertAfterRow.rowIndex;
-        row = pairsTbody.insertRow(afterIndex + 1);
+        // Get index in tbody (not in table), rowIndex includes thead
+        const tbodyRows = Array.from(pairsTbody.rows);
+        const rowIndexInTbody = tbodyRows.indexOf(insertAfterRow);
+        // Insert after = rowIndexInTbody + 1
+        row = pairsTbody.insertRow(rowIndexInTbody + 1);
     } else {
         row = pairsTbody.insertRow(-1);
     }
@@ -1194,31 +1205,39 @@ function addPairsRow(data, insertAfterRow){
 
     order.forEach((colId, idx)=>{
         let td;
+        // Get value from data object (if data is object) or array (legacy)
+        const getValue = (key) => {
+            if(!data) return '';
+            // If data is object, use key; if array, it's legacy format
+            return (typeof data === 'object' && !Array.isArray(data)) ? (data[key] || '') : '';
+        };
+        
         switch(colId){
-            case 'asset_1': td = makeAssetAutocomplete(data?data[0]:''); break;
-            case 'asset_2': td = makeAssetAutocomplete(data?data[1]:''); break;
-            case 'account_1': td = makeAccountAutocomplete(data?data[2]:''); break;
-            case 'account_2': td = makeAccountAutocomplete(data?data[3]:''); break;
-            case 'side_1': [td,sel1] = makeSelect(data? (data[4] || 'BUY') :'BUY'); break;
-            case 'side_2': [td,sel2] = makeSelect(data? (data[5] || 'BUY') :'BUY'); break;
-            case 'qty_ratio_1': td = makeEditable(data?data[6]:''); break;
-            case 'qty_ratio_2': td = makeEditable(data?data[7]:''); break;
-            case 'price_ratio_1': td = makeEditable(data?data[8]:''); break;
-            case 'price_ratio_2': td = makeEditable(data?data[9]:''); break;
-            case 'price': td = makeEditable(data?data[10]:''); break;
-            case 'target_qty': td = makeEditable(data?data[11]:''); break;
-            case 'exec_price': td = makeReadonly(data? data[12]||'' : ''); break;
-            case 'exec_qty': td = makeReadonly(data? data[13]||'' : '0'); break;
-            case 'leaves_qty': td = makeReadonly(data? data[14]||'' : ''); break;
-            case 'strategy_name': td = makeEditable(data?data[15]:''); break;
-            case 'price_1': td = document.createElement('td'); td.textContent = data? data[16]||'' : ''; break;
-            case 'price_2': td = document.createElement('td'); td.textContent = data? data[17]||'' : ''; break;
-            case 'md_dt_1': td = document.createElement('td'); td.textContent = data? data[18]||'' : ''; td.style.fontSize = '11px'; break;
-            case 'md_dt_2': td = document.createElement('td'); td.textContent = data? data[19]||'' : ''; td.style.fontSize = '11px'; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = data? data[20]||'' : ''; break;
+            case 'asset_1': td = makeAssetAutocomplete(getValue('asset_1')); break;
+            case 'asset_2': td = makeAssetAutocomplete(getValue('asset_2')); break;
+            case 'account_1': td = makeAccountAutocomplete(getValue('account_1')); break;
+            case 'account_2': td = makeAccountAutocomplete(getValue('account_2')); break;
+            case 'side_1': [td,sel1] = makeSelect(getValue('side_1') || 'BUY'); break;
+            case 'side_2': [td,sel2] = makeSelect(getValue('side_2') || 'BUY'); break;
+            case 'qty_ratio_1': td = makeEditable(getValue('qty_ratio_1')); break;
+            case 'qty_ratio_2': td = makeEditable(getValue('qty_ratio_2')); break;
+            case 'price_ratio_1': td = makeEditable(getValue('price_ratio_1')); break;
+            case 'price_ratio_2': td = makeEditable(getValue('price_ratio_2')); break;
+            case 'price': td = makeEditable(getValue('price')); break;
+            case 'target_qty': td = makeEditable(getValue('target_qty')); break;
+            case 'exec_price': td = makeReadonly(getValue('exec_price')); break;
+            case 'exec_qty': td = makeReadonly(getValue('exec_qty') || '0'); break;
+            case 'leaves_qty': td = makeReadonly(getValue('leaves_qty')); break;
+            case 'strategy_name': td = makeEditable(getValue('strategy_name')); break;
+            case 'price_1': td = document.createElement('td'); td.textContent = getValue('price_1'); break;
+            case 'price_2': td = document.createElement('td'); td.textContent = getValue('price_2'); break;
+            case 'md_dt_1': td = document.createElement('td'); td.textContent = getValue('md_dt_1'); td.style.fontSize = '11px'; break;
+            case 'md_dt_2': td = document.createElement('td'); td.textContent = getValue('md_dt_2'); td.style.fontSize = '11px'; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = getValue('hit_price'); break;
             case 'get_mdata':
                 td = document.createElement('td');
-                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = data? !!data[21] : false; td.appendChild(cb);
+                const getMdataValue = data && typeof data === 'object' && !Array.isArray(data) ? !!data['get_mdata'] : false;
+                cb = document.createElement('input'); cb.type='checkbox'; cb.checked = getMdataValue; td.appendChild(cb);
                 break;
             case 'reset':
                 td = document.createElement('td');
@@ -1301,7 +1320,8 @@ function addPairsRow(data, insertAfterRow){
                 break;
             case 'started':
                 td = document.createElement('td');
-                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = data? !!data[23] : false; td.appendChild(chk);
+                const getStartedValue = data && typeof data === 'object' && !Array.isArray(data) ? !!data['started'] : false;
+                const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = getStartedValue; td.appendChild(chk);
                 chk.addEventListener('change', ()=>{
                     if(chk.checked){
                         // включаем торговлю: очищаем ошибку и сбрасываем внутренние флаги
@@ -1314,7 +1334,7 @@ function addPairsRow(data, insertAfterRow){
                     savePairsTable();
                 });
                 break;
-            case 'error': td = document.createElement('td'); td.textContent = data? data[24]||'' : ''; break;
+            case 'error': td = document.createElement('td'); td.textContent = getValue('error'); break;
             default:
                 td = document.createElement('td');
         }
