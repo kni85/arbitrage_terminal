@@ -1099,8 +1099,73 @@ function completeSetupAccountAutocomplete(cell) {
 }
 
 // -------------------- Add row helper --------------------
-function addPairsRow(data){
-    const row = pairsTbody.insertRow(-1);
+// Extract data from existing row for duplication
+function extractPairsRowData(row){
+    const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
+    const data = [];
+    
+    order.forEach((colId, idx) => {
+        const cell = row.cells[idx];
+        if(!cell) { data.push(''); return; }
+        
+        switch(colId){
+            case 'asset_1':
+            case 'asset_2':
+            case 'account_1':
+            case 'account_2':
+            case 'qty_ratio_1':
+            case 'qty_ratio_2':
+            case 'price_ratio_1':
+            case 'price_ratio_2':
+            case 'price':
+            case 'target_qty':
+            case 'strategy_name':
+                data.push(cell.textContent.trim());
+                break;
+            case 'side_1':
+            case 'side_2':
+                const select = cell.querySelector('select');
+                data.push(select ? select.value : 'BUY');
+                break;
+            case 'exec_price':
+            case 'exec_qty':
+            case 'leaves_qty':
+            case 'price_1':
+            case 'price_2':
+            case 'md_dt_1':
+            case 'md_dt_2':
+            case 'hit_price':
+            case 'error':
+                // Эти поля не копируем (они обнуляются для нового бота)
+                data.push('');
+                break;
+            case 'get_mdata':
+                const cb = cell.querySelector('input[type="checkbox"]');
+                data.push(cb ? cb.checked : false);
+                break;
+            case 'started':
+                // started не копируем - новый бот создаётся остановленным
+                data.push(false);
+                break;
+            default:
+                data.push('');
+        }
+    });
+    
+    return data;
+}
+
+function addPairsRow(data, insertAfterRow){
+    // If insertAfterRow is provided, insert after that row, otherwise append to end
+    let row;
+    if(insertAfterRow){
+        // rowIndex is the index in the tbody (0-based)
+        // We want to insert AFTER the current row, so add 1
+        const afterIndex = insertAfterRow.rowIndex;
+        row = pairsTbody.insertRow(afterIndex + 1);
+    } else {
+        row = pairsTbody.insertRow(-1);
+    }
 
     const order = Array.from(document.querySelectorAll('#pairs_table thead th')).map(th=>th.dataset.col);
 
@@ -1293,6 +1358,20 @@ document.getElementById('pairs_add').onclick = ()=>{
     addPairsRow();
     pairsMenu.style.display='none';
     savePairsTable();
+};
+
+// Duplicate row
+document.getElementById('pairs_dup').onclick = ()=>{
+    if(currentPairRow){
+        // Extract data from current row (without ID, exec_price, exec_qty, etc.)
+        const data = extractPairsRowData(currentPairRow);
+        // Create new row right after the current one
+        addPairsRow(data, currentPairRow);
+        pairsMenu.style.display='none';
+        savePairsTable();
+    } else {
+        pairsMenu.style.display='none';
+    }
 };
 
 // Delete row via menu
