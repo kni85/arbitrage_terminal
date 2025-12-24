@@ -2107,13 +2107,19 @@ async function _syncPairsImpl(rows){
         const serverKey = `${serverPair.asset_1}|${serverPair.asset_2}|${serverPair.strategy_name}`;
         // Удаляем только если нет ни id, ни ключа в UI
         if(!uiIds.has(parseInt(serverId)) && !uiKeys.has(serverKey)){
-            try {
-                await deleteJson(`${API_BASE}/pairs/${serverId}`);
-                delete serverById[serverId];
-                delete serverByKey[serverKey];
-            } catch(e) {
-                console.warn(`Failed to delete pair ${serverId}:`, e);
-            }
+            console.warn(`syncPairs: Would delete pair ${serverId} (${serverKey}) - not found in UI`, {
+                uiIds: Array.from(uiIds),
+                uiKeys: Array.from(uiKeys),
+                serverPair
+            });
+            // ВРЕМЕННО ОТКЛЮЧЕНО: автоматическое удаление для диагностики
+            // try {
+            //     await deleteJson(`${API_BASE}/pairs/${serverId}`);
+            //     delete serverById[serverId];
+            //     delete serverByKey[serverKey];
+            // } catch(e) {
+            //     console.warn(`Failed to delete pair ${serverId}:`, e);
+            // }
         }
     }
 
