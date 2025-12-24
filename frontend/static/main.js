@@ -1206,37 +1206,51 @@ function addPairsRow(data, insertAfterRow){
     order.forEach((colId, idx)=>{
         let td;
         // Get value from data object (if data is object) or array (legacy)
-        const getValue = (key) => {
+        const getValue = (key, arrayIndex) => {
             if(!data) return '';
-            // If data is object, use key; if array, it's legacy format
-            return (typeof data === 'object' && !Array.isArray(data)) ? (data[key] || '') : '';
+            // If data is object, use key
+            if(typeof data === 'object' && !Array.isArray(data)) {
+                return data[key] || '';
+            }
+            // If data is array (legacy format), use arrayIndex
+            if(Array.isArray(data) && arrayIndex !== undefined) {
+                return data[arrayIndex] || '';
+            }
+            return '';
         };
         
         switch(colId){
-            case 'asset_1': td = makeAssetAutocomplete(getValue('asset_1')); break;
-            case 'asset_2': td = makeAssetAutocomplete(getValue('asset_2')); break;
-            case 'account_1': td = makeAccountAutocomplete(getValue('account_1')); break;
-            case 'account_2': td = makeAccountAutocomplete(getValue('account_2')); break;
-            case 'side_1': [td,sel1] = makeSelect(getValue('side_1') || 'BUY'); break;
-            case 'side_2': [td,sel2] = makeSelect(getValue('side_2') || 'BUY'); break;
-            case 'qty_ratio_1': td = makeEditable(getValue('qty_ratio_1')); break;
-            case 'qty_ratio_2': td = makeEditable(getValue('qty_ratio_2')); break;
-            case 'price_ratio_1': td = makeEditable(getValue('price_ratio_1')); break;
-            case 'price_ratio_2': td = makeEditable(getValue('price_ratio_2')); break;
-            case 'price': td = makeEditable(getValue('price')); break;
-            case 'target_qty': td = makeEditable(getValue('target_qty')); break;
-            case 'exec_price': td = makeReadonly(getValue('exec_price')); break;
-            case 'exec_qty': td = makeReadonly(getValue('exec_qty') || '0'); break;
-            case 'leaves_qty': td = makeReadonly(getValue('leaves_qty')); break;
-            case 'strategy_name': td = makeEditable(getValue('strategy_name')); break;
-            case 'price_1': td = document.createElement('td'); td.textContent = getValue('price_1'); break;
-            case 'price_2': td = document.createElement('td'); td.textContent = getValue('price_2'); break;
-            case 'md_dt_1': td = document.createElement('td'); td.textContent = getValue('md_dt_1'); td.style.fontSize = '11px'; break;
-            case 'md_dt_2': td = document.createElement('td'); td.textContent = getValue('md_dt_2'); td.style.fontSize = '11px'; break;
-            case 'hit_price': td = document.createElement('td'); td.textContent = getValue('hit_price'); break;
+            case 'asset_1': td = makeAssetAutocomplete(getValue('asset_1', 0)); break;
+            case 'asset_2': td = makeAssetAutocomplete(getValue('asset_2', 1)); break;
+            case 'account_1': td = makeAccountAutocomplete(getValue('account_1', 2)); break;
+            case 'account_2': td = makeAccountAutocomplete(getValue('account_2', 3)); break;
+            case 'side_1': [td,sel1] = makeSelect(getValue('side_1', 4) || 'BUY'); break;
+            case 'side_2': [td,sel2] = makeSelect(getValue('side_2', 5) || 'BUY'); break;
+            case 'qty_ratio_1': td = makeEditable(getValue('qty_ratio_1', 6)); break;
+            case 'qty_ratio_2': td = makeEditable(getValue('qty_ratio_2', 7)); break;
+            case 'price_ratio_1': td = makeEditable(getValue('price_ratio_1', 8)); break;
+            case 'price_ratio_2': td = makeEditable(getValue('price_ratio_2', 9)); break;
+            case 'price': td = makeEditable(getValue('price', 10)); break;
+            case 'target_qty': td = makeEditable(getValue('target_qty', 11)); break;
+            case 'exec_price': td = makeReadonly(getValue('exec_price', 12)); break;
+            case 'exec_qty': td = makeReadonly(getValue('exec_qty', 13) || '0'); break;
+            case 'leaves_qty': td = makeReadonly(getValue('leaves_qty', 14)); break;
+            case 'strategy_name': td = makeEditable(getValue('strategy_name', 15)); break;
+            case 'price_1': td = document.createElement('td'); td.textContent = getValue('price_1', 16); break;
+            case 'price_2': td = document.createElement('td'); td.textContent = getValue('price_2', 17); break;
+            case 'md_dt_1': td = document.createElement('td'); td.textContent = getValue('md_dt_1', 18); td.style.fontSize = '11px'; break;
+            case 'md_dt_2': td = document.createElement('td'); td.textContent = getValue('md_dt_2', 19); td.style.fontSize = '11px'; break;
+            case 'hit_price': td = document.createElement('td'); td.textContent = getValue('hit_price', 20); break;
             case 'get_mdata':
                 td = document.createElement('td');
-                const getMdataValue = data && typeof data === 'object' && !Array.isArray(data) ? !!data['get_mdata'] : false;
+                let getMdataValue;
+                if(data && typeof data === 'object' && !Array.isArray(data)) {
+                    getMdataValue = !!data['get_mdata'];
+                } else if(Array.isArray(data)) {
+                    getMdataValue = !!data[21];
+                } else {
+                    getMdataValue = false;
+                }
                 cb = document.createElement('input'); cb.type='checkbox'; cb.checked = getMdataValue; td.appendChild(cb);
                 break;
             case 'reset':
@@ -1320,7 +1334,14 @@ function addPairsRow(data, insertAfterRow){
                 break;
             case 'started':
                 td = document.createElement('td');
-                const getStartedValue = data && typeof data === 'object' && !Array.isArray(data) ? !!data['started'] : false;
+                let getStartedValue;
+                if(data && typeof data === 'object' && !Array.isArray(data)) {
+                    getStartedValue = !!data['started'];
+                } else if(Array.isArray(data)) {
+                    getStartedValue = !!data[23];
+                } else {
+                    getStartedValue = false;
+                }
                 const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = getStartedValue; td.appendChild(chk);
                 chk.addEventListener('change', ()=>{
                     if(chk.checked){
@@ -1334,7 +1355,7 @@ function addPairsRow(data, insertAfterRow){
                     savePairsTable();
                 });
                 break;
-            case 'error': td = document.createElement('td'); td.textContent = getValue('error'); break;
+            case 'error': td = document.createElement('td'); td.textContent = getValue('error', 24); break;
             default:
                 td = document.createElement('td');
         }
