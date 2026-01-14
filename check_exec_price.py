@@ -52,7 +52,7 @@ async def check_exec_price():
             
             if total_filled > 0:
                 manual_avg = total_cost / total_filled
-                diff = abs(manual_avg - (pair.exec_price or 0))
+                diff = abs(manual_avg - float(pair.exec_price or 0))
                 
                 print(f"\n   {'─'*60}")
                 print(f"   📈 Расчет вручную:")
