@@ -1377,6 +1377,16 @@ function addPairsRow(data, insertAfterRow){
         if(cb.checked) row._pendingStart = true;
     }
 
+    // Restore timestamp values from data object (needed for stale quote checking)
+    if(data && typeof data === 'object' && !Array.isArray(data)) {
+        if(data.md_dt_1) {
+            row._md_dt_1 = data.md_dt_1;
+        }
+        if(data.md_dt_2) {
+            row._md_dt_2 = data.md_dt_2;
+        }
+    }
+
     // initial hit price
     updateHitPrice(row);
     return row;
@@ -2748,12 +2758,25 @@ function removeRowFromLocalStorage(tableType, id, tr){
             const price2Cell = cellById(row, 'price_2');
             const mdDt1Cell = cellById(row, 'md_dt_1');
             const mdDt2Cell = cellById(row, 'md_dt_2');
+            const getMdataCell = cellById(row, 'get_mdata');
             
             if (!price1Cell || !price2Cell) continue;
+            
+            // Подсветка только если get_mdata активен
+            const getMdataActive = getMdataCell && getMdataCell.querySelector('input') && getMdataCell.querySelector('input').checked;
             
             // Проверяем, есть ли цены
             const hasPrice1 = price1Cell.textContent.trim() !== '';
             const hasPrice2 = price2Cell.textContent.trim() !== '';
+            
+            // Если get_mdata выключен - очищаем подсветку
+            if (!getMdataActive) {
+                price1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                price2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                if (mdDt1Cell) mdDt1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                if (mdDt2Cell) mdDt2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                continue;
+            }
             
             // Получаем timestamp'ы
             const ts1 = row._md_dt_1 ? new Date(row._md_dt_1).getTime() : 0;
