@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from infra.quik import QuikConnector          # актуальный путь
 from db.database import AsyncSessionLocal     # наш пакет db
-from db.models import Order, OrderStatus, Side, Instrument
+from db.models import Order, OrderStatus, Side, Instrument, Pair
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +324,48 @@ class OrderManager:
                     # Корректно рассчитываем leaves_qty
                     order.leaves_qty = max(order.qty - order.filled, 0)
                 await session.commit()
+    
+    async def _update_pair_exec_price(self, session, order: Order) -> None:
+        """Обновляет exec_price и exec_qty в таблице Pair на основе реальных сделок по ордерам.
+        
+        Расчет exec_price для пары основан на взвешенном среднем всех ордеров пары.
+        """
+        if not order.pair_id:
+            return  # Ордер не связан с парой
+        
+        from sqlalchemy import select
+        
+        # Получаем все ордера этой пары с исполненными сделками
+        stmt = select(Order).where(
+            Order.pair_id == order.pair_id,
+            Order.filled > 0,
+            Order.exec_price.isnot(None)
+        )
+        result = await session.execute(stmt)
+        orders = result.scalars().all()
+        
+        if not orders:
+            return
+        
+        # Рассчитываем общий exec_qty и взвешенный exec_price
+        total_filled = 0
+        total_cost = 0.0
+        
+        for ord in orders:
+            if ord.exec_price and ord.filled:
+                total_filled += ord.filled
+                total_cost += ord.exec_price * ord.filled
+        
+        if total_filled > 0:
+            avg_exec_price = total_cost / total_filled
+            
+            # Обновляем Pair
+            pair = await session.get(Pair, order.pair_id)
+            if pair:
+                pair.exec_qty = total_filled
+                pair.exec_price = avg_exec_price
+                await session.commit()
+                logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={total_filled}, exec_price={avg_exec_price:.4f}")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """
@@ -379,7 +421,7 @@ class OrderManager:
 
     def on_trade_event(self, event: dict):
         """
-        Ищем по QUIK_ID, если нет — по trans_id.
+        Обрабатывает событие сделки: обновляет filled qty и рассчитывает exec_price по реальным сделкам.
         """
         quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
         trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
@@ -395,16 +437,37 @@ class OrderManager:
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
                 if order:
-                    qty = event.get("qty") or 0
-                    order.filled = (order.filled or 0) + qty
+                    # Получаем данные сделки
+                    trade_qty = event.get("qty") or 0
+                    trade_price = event.get("price") or 0.0
+                    
+                    # Обновляем filled quantity
+                    prev_filled = order.filled or 0
+                    order.filled = prev_filled + trade_qty
                     order.leaves_qty = max(order.qty - order.filled, 0)
-                    # PARTIAL или FILLED
+                    
+                    # Рассчитываем weighted average execution price
+                    if trade_qty > 0 and trade_price > 0:
+                        prev_exec_price = order.exec_price or 0.0
+                        if prev_filled == 0:
+                            # Первая сделка
+                            order.exec_price = float(trade_price)
+                        else:
+                            # Взвешенное среднее: (prev_price * prev_qty + new_price * new_qty) / total_qty
+                            total_cost = (prev_exec_price * prev_filled) + (trade_price * trade_qty)
+                            order.exec_price = total_cost / order.filled
+                    
+                    # Обновляем статус
                     if order.filled >= order.qty:
                         order.status = OrderStatus.FILLED
                     else:
                         order.status = OrderStatus.PARTIAL
+                    
                     await session.commit()
-                    logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, leaves_qty={order.leaves_qty}, status={order.status}")
+                    logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, exec_price={order.exec_price}, leaves_qty={order.leaves_qty}, status={order.status}")
+                    
+                    # Обновляем Pair.exec_price если ордер связан с парой
+                    await self._update_pair_exec_price(session, order)
         self._schedule(update())
 
     def on_trans_reply_event(self, event: dict):

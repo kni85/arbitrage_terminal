@@ -84,8 +84,11 @@ async def send_order(data: Dict[str, Any], broker: Broker | None = None) -> Dict
 # ---------------------------------------------------------------------------
 
 async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) -> Tuple[bool, str]:  # noqa: D401
-    """Отправляет два синхронных рыночных ордера (парный арбитраж)."""
+    """Отправляет два синхронных рыночных ордера (парный арбитраж) и сохраняет их в БД."""
     try:
+        from db.models import Order, OrderStatus, Side, Instrument, PortfolioConfig
+        from sqlalchemy import select
+        
         # Безопасно получаем обязательные поля
         class_code_1 = data.get("class_code_1")
         sec_code_1 = data.get("sec_code_1")
@@ -93,6 +96,7 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         sec_code_2 = data.get("sec_code_2")
         side_1 = data.get("side_1")
         side_2 = data.get("side_2")
+        pair_id = data.get("pair_id")  # Database ID of the trading pair
         
         # Проверяем обязательные поля
         if not all([class_code_1, sec_code_1, class_code_2, sec_code_2, side_1, side_2]):
@@ -111,17 +115,83 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         account2, client2 = data.get("account_2"), data.get("client_code_2")
         op1 = "B" if str(side_1).upper().startswith("B") else "S"
         op2 = "B" if str(side_2).upper().startswith("B") else "S"
+        
         async with AsyncSessionLocal() as sess:
             trans1 = await get_next_trans_id(sess)
             trans2 = trans1 + 1
-
-        # зарегистрируем оба trans_id, чтобы callbacks нашлись
-        try:
+            
+            # Получаем или создаём инструменты
+            stmt1 = select(Instrument).where(
+                Instrument.ticker == sec_code_1,
+                Instrument.board == class_code_1
+            )
+            result1 = await sess.execute(stmt1)
+            instrument1 = result1.scalar_one_or_none()
+            if not instrument1:
+                instrument1 = Instrument(
+                    ticker=sec_code_1, board=class_code_1, 
+                    lot_size=1, price_precision=2
+                )
+                sess.add(instrument1)
+                await sess.flush()
+            
+            stmt2 = select(Instrument).where(
+                Instrument.ticker == sec_code_2,
+                Instrument.board == class_code_2
+            )
+            result2 = await sess.execute(stmt2)
+            instrument2 = result2.scalar_one_or_none()
+            if not instrument2:
+                instrument2 = Instrument(
+                    ticker=sec_code_2, board=class_code_2,
+                    lot_size=1, price_precision=2
+                )
+                sess.add(instrument2)
+                await sess.flush()
+            
+            # Получаем или создаём дефолтный портфель
+            stmt_port = select(PortfolioConfig).where(PortfolioConfig.active == True).limit(1)
+            result_port = await sess.execute(stmt_port)
+            portfolio = result_port.scalar_one_or_none()
+            if not portfolio:
+                portfolio = PortfolioConfig(
+                    name="Default Portfolio",
+                    config_json={},
+                    active=True
+                )
+                sess.add(portfolio)
+                await sess.flush()
+            
+            # Создаём записи Order в БД
+            order_rec_1 = Order(
+                trans_id=trans1,
+                portfolio_id=portfolio.id,
+                pair_id=pair_id,  # Связываем с парой
+                instrument_id=instrument1.id,
+                side=Side.LONG if op1 == "B" else Side.SHORT,
+                price=0.0,  # Рыночная заявка
+                qty=qty1,
+                status=OrderStatus.NEW
+            )
+            order_rec_2 = Order(
+                trans_id=trans2,
+                portfolio_id=portfolio.id,
+                pair_id=pair_id,  # Связываем с парой
+                instrument_id=instrument2.id,
+                side=Side.LONG if op2 == "B" else Side.SHORT,
+                price=0.0,  # Рыночная заявка
+                qty=qty2,
+                status=OrderStatus.NEW
+            )
+            sess.add(order_rec_1)
+            sess.add(order_rec_2)
+            await sess.commit()
+            
+            # Регистрируем маппинг в OrderManager
             om = container.order_manager()
-            om._register_trans_mapping(trans1, -1)
-            om._register_trans_mapping(trans2, -1)
-        except Exception:
-            pass
+            om._register_trans_mapping(trans1, order_rec_1.id)
+            om._register_trans_mapping(trans2, order_rec_2.id)
+
         order1 = {
             "ACTION": "NEW_ORDER","CLASSCODE": class_code_1,"SECCODE": sec_code_1,
             "ACCOUNT": account1,"CLIENT_CODE": client1,"OPERATION": op1,
@@ -139,4 +209,6 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         msg_text = "" if ok else f"Order errors: {res1}, {res2}"
         return ok, msg_text
     except Exception as exc:  # pragma: no cover
+        import traceback
+        traceback.print_exc()
         return False, str(exc)

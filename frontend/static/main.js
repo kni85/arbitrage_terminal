@@ -174,19 +174,13 @@ const handleWsOrderMessage = (ev) => {
         if(!row) return;
         row._inFlight=false;
         if(ok){
-            // обновляем exec_qty
-            const execQtyCell = cellById(row,'exec_qty');
-            const prevQty = parseInt(execQtyCell.textContent)||0;
-            const newQty = prevQty+1;
-            execQtyCell.textContent = newQty.toString();
-            // exec_price (среднее) – используем текущий hit_price
-            const hit = parseFloat(cellById(row,'hit_price').textContent)||0;
-            const execPriceCell = cellById(row,'exec_price');
-            const prevPrice = parseFloat(execPriceCell.textContent)||0;
-            const newPrice = prevQty===0? hit : ((prevPrice*prevQty + hit)/newQty);
-            execPriceCell.textContent = newPrice ? newPrice.toFixed(4): '';
-            // пересчёт leaves_qty
+            // exec_price и exec_qty будут обновлены автоматически через WebSocket
+            // когда придут реальные сделки из QUIK (OnTrade events)
+            // Поэтому здесь мы НЕ рассчитываем exec_price на основе hit_price
+            
+            // Просто пересчитываем leaves_qty на основе текущих значений
             updateLeaves(row);
+            
             // auto-stop
             const leaves = parseInt(cellById(row,'leaves_qty').textContent)||0;
             if(leaves<=0){
@@ -1587,6 +1581,7 @@ function sendPairOrder(row){
     const payload = {
         action:'send_pair_order',
         row_id: Array.from(pairsTbody.rows).indexOf(row),
+        pair_id: row.dataset.id ? parseInt(row.dataset.id, 10) : null,  // Database ID of the pair
         class_code_1: cfg1.classcode, sec_code_1: cfg1.seccode,
         class_code_2: cfg2.classcode, sec_code_2: cfg2.seccode,
         side_1 : cellById(row,'side_1').querySelector('select').value,

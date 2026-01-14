@@ -289,6 +289,7 @@ class Order(Base):
     trans_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio_configs.id"), nullable=False)
     strategy_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pair_id: Mapped[int | None] = mapped_column(ForeignKey("pairs_table.id"), nullable=True)  # Link to trading pair
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
 
     side: Mapped[Side] = mapped_column(Enum(Side), nullable=False)
@@ -296,6 +297,7 @@ class Order(Base):
     qty: Mapped[int] = mapped_column(Integer, nullable=False)
     filled: Mapped[int] = mapped_column(Integer, default=0)
     leaves_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exec_price: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)  # Weighted avg execution price from real trades
 
     status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.NEW)
 
