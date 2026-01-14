@@ -57,6 +57,10 @@
         /* Heartbeat indicator */
         .heartbeat-indicator { position: fixed; top: 10px; right: 10px; padding: 8px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
         .heartbeat-indicator.ok { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+        
+        /* Stale quote highlighting */
+        .stale-quote { background-color: #ffe6e6 !important; color: #cc0000 !important; }
+        .stale-quote-warning { background-color: #fff3cd !important; color: #856404 !important; }
         .heartbeat-indicator.warning { background: #fff3cd; border-color: #ffeeba; color: #856404; }
         .heartbeat-indicator.error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
         
@@ -197,6 +201,11 @@
         <div style="margin-bottom: 10px;">
             <button id="reset_column_widths">Reset columns to default</button>
             <button id="open_column_sorting">Column sorting</button>
+            <span style="margin-left: 20px;">
+                <label style="width: auto;">Max quote age (ms):</label>
+                <input id="max_quote_age" type="number" value="5000" min="1000" max="30000" step="500" style="width: 80px;" title="Максимальный возраст котировок перед блокировкой торговли (миллисекунды)" />
+                <span style="font-size: 0.85em; color: #666; margin-left: 5px;">(стандарт: 5000мс)</span>
+            </span>
         </div>
         <table id="pairs_table" class="codes-table">
             <thead>

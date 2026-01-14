@@ -1510,6 +1510,47 @@ function checkRowForTrade(row){
         return;
     }
 
+    // КРИТИЧЕСКИ ВАЖНО: Проверяем свежесть котировок
+    const maxAgeInput = document.getElementById('max_quote_age');
+    const maxAgeMs = maxAgeInput ? parseInt(maxAgeInput.value, 10) : 5000; // По умолчанию 5 секунд
+    const now = new Date().getTime();
+    
+    const ts1 = row._md_dt_1 ? new Date(row._md_dt_1).getTime() : 0;
+    const ts2 = row._md_dt_2 ? new Date(row._md_dt_2).getTime() : 0;
+    
+    const age1 = ts1 ? (now - ts1) : Infinity;
+    const age2 = ts2 ? (now - ts2) : Infinity;
+    
+    if (age1 > maxAgeMs || age2 > maxAgeMs) {
+        console.warn('Trade blocked: stale quotes', {
+            age1_ms: age1,
+            age2_ms: age2,
+            max_age_ms: maxAgeMs,
+            ts1: row._md_dt_1,
+            ts2: row._md_dt_2
+        });
+        
+        // Обновляем ошибку в UI
+        const errorCell = cellById(row,'error');
+        let currentError = errorCell.textContent;
+        currentError = currentError.replace(/Stale quotes.*?(;|\n|$)/g, '').trim();
+        currentError = currentError.replace(/^[,;\s]+|[,;\s]+$/g, '');
+        
+        const staleError = `Stale quotes: age1=${Math.round(age1/1000)}s, age2=${Math.round(age2/1000)}s`;
+        errorCell.textContent = currentError ? `${currentError}; ${staleError}` : staleError;
+        
+        return;
+    }
+    
+    // Очищаем ошибку о stale quotes если котировки свежие
+    const errorCell = cellById(row,'error');
+    if (errorCell) {
+        let currentError = errorCell.textContent;
+        currentError = currentError.replace(/Stale quotes.*?(;|\n|$)/g, '').trim();
+        currentError = currentError.replace(/^[,;\s]+|[,;\s]+$/g, '');
+        errorCell.textContent = currentError;
+    }
+
     const side1 = cellById(row,'side_1').querySelector('select').value;
     const priceTarget = parseFloat(cellById(row,'price').textContent);
     if(isNaN(priceTarget)) return;
@@ -1589,18 +1630,26 @@ function connectAsset(row, idx, cfg){
         if(msg.orderbook){
             const price = calcAvgPrice(msg.orderbook, qty, side==='BUY');
             const priceCell = cellById(row, idx===1? 'price_1':'price_2');
-            priceCell.textContent = price ? price.toFixed(decimals): '';
-            
-            // Update market data timestamp
-            const mdDtCell = cellById(row, idx===1? 'md_dt_1':'md_dt_2');
             const timestamp = msg.time || new Date().toISOString();
-            mdDtCell.textContent = formatTimestamp(timestamp);
             
-            // Store timestamp for DB sync
-            if (idx === 1) {
-                row._md_dt_1 = timestamp;
+            // КРИТИЧЕСКИ ВАЖНО: Если нет ликвидности - ОЧИЩАЕМ цену и таймштамп
+            if (price === null || price === undefined) {
+                priceCell.textContent = '';
+                // Не обновляем timestamp - оставляем старый для индикации устаревания
+                console.warn(`No liquidity for ${idx===1?'asset_1':'asset_2'}: orderbook insufficient`);
             } else {
-                row._md_dt_2 = timestamp;
+                priceCell.textContent = price.toFixed(decimals);
+                
+                // Update market data timestamp ONLY when we have valid price
+                const mdDtCell = cellById(row, idx===1? 'md_dt_1':'md_dt_2');
+                mdDtCell.textContent = formatTimestamp(timestamp);
+                
+                // Store timestamp for DB sync
+                if (idx === 1) {
+                    row._md_dt_1 = timestamp;
+                } else {
+                    row._md_dt_2 = timestamp;
+                }
             }
             
             updateHitPrice(row);
@@ -2682,4 +2731,97 @@ function removeRowFromLocalStorage(tableType, id, tr){
         // Это работает для quote WebSocket'ов
         return window._activeWs || null;
     }
+})();
+
+// -------------------- Stale quotes monitoring ----------------------------
+(function(){
+    const STALE_WARNING_MS = 3000;  // 3 секунды - предупреждение (желтый)
+    const STALE_ERROR_MS = 5000;    // 5 секунд - ошибка (красный)
+    
+    function checkStaleQuotes() {
+        const now = new Date().getTime();
+        const pairsTbody = document.getElementById('pairs_tbody');
+        if (!pairsTbody) return;
+        
+        for (let row of pairsTbody.rows) {
+            const price1Cell = cellById(row, 'price_1');
+            const price2Cell = cellById(row, 'price_2');
+            const mdDt1Cell = cellById(row, 'md_dt_1');
+            const mdDt2Cell = cellById(row, 'md_dt_2');
+            
+            if (!price1Cell || !price2Cell) continue;
+            
+            // Проверяем, есть ли цены
+            const hasPrice1 = price1Cell.textContent.trim() !== '';
+            const hasPrice2 = price2Cell.textContent.trim() !== '';
+            
+            // Получаем timestamp'ы
+            const ts1 = row._md_dt_1 ? new Date(row._md_dt_1).getTime() : 0;
+            const ts2 = row._md_dt_2 ? new Date(row._md_dt_2).getTime() : 0;
+            
+            const age1 = ts1 ? (now - ts1) : 0;
+            const age2 = ts2 ? (now - ts2) : 0;
+            
+            // Подсветка для первой ноги
+            if (hasPrice1) {
+                if (age1 > STALE_ERROR_MS) {
+                    price1Cell.classList.add('stale-quote');
+                    price1Cell.classList.remove('stale-quote-warning');
+                    if (mdDt1Cell) {
+                        mdDt1Cell.classList.add('stale-quote');
+                        mdDt1Cell.classList.remove('stale-quote-warning');
+                    }
+                } else if (age1 > STALE_WARNING_MS) {
+                    price1Cell.classList.add('stale-quote-warning');
+                    price1Cell.classList.remove('stale-quote');
+                    if (mdDt1Cell) {
+                        mdDt1Cell.classList.add('stale-quote-warning');
+                        mdDt1Cell.classList.remove('stale-quote');
+                    }
+                } else {
+                    price1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                    if (mdDt1Cell) {
+                        mdDt1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                    }
+                }
+            } else {
+                price1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                if (mdDt1Cell) {
+                    mdDt1Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                }
+            }
+            
+            // Подсветка для второй ноги
+            if (hasPrice2) {
+                if (age2 > STALE_ERROR_MS) {
+                    price2Cell.classList.add('stale-quote');
+                    price2Cell.classList.remove('stale-quote-warning');
+                    if (mdDt2Cell) {
+                        mdDt2Cell.classList.add('stale-quote');
+                        mdDt2Cell.classList.remove('stale-quote-warning');
+                    }
+                } else if (age2 > STALE_WARNING_MS) {
+                    price2Cell.classList.add('stale-quote-warning');
+                    price2Cell.classList.remove('stale-quote');
+                    if (mdDt2Cell) {
+                        mdDt2Cell.classList.add('stale-quote-warning');
+                        mdDt2Cell.classList.remove('stale-quote');
+                    }
+                } else {
+                    price2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                    if (mdDt2Cell) {
+                        mdDt2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                    }
+                }
+            } else {
+                price2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                if (mdDt2Cell) {
+                    mdDt2Cell.classList.remove('stale-quote', 'stale-quote-warning');
+                }
+            }
+        }
+    }
+    
+    // Проверяем каждые 500мс для своевременной подсветки
+    setInterval(checkStaleQuotes, 500);
 })();
