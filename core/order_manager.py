@@ -328,7 +328,9 @@ class OrderManager:
     async def _update_pair_exec_price(self, session, order: Order) -> None:
         """Обновляет exec_price и exec_qty в таблице Pair на основе реальных сделок по ордерам.
         
-        Расчет exec_price для пары основан на взвешенном среднем всех ордеров пары.
+        Расчет exec_price для арбитражной пары:
+        exec_price = SUM(SHORT_price * SHORT_qty) - SUM(LONG_price * LONG_qty)
+        Это P&L (profit/loss) арбитража.
         """
         if not order.pair_id:
             return  # Ордер не связан с парой
@@ -347,31 +349,40 @@ class OrderManager:
         if not orders:
             return
         
-        # Рассчитываем общий exec_qty и взвешенный exec_price
-        total_filled = 0
-        total_cost = 0.0
+        # Рассчитываем P&L арбитража: SHORT - LONG
+        short_value = 0.0  # Сумма продаж (получаем деньги)
+        long_value = 0.0   # Сумма покупок (тратим деньги)
         
         logger.info(f"[PAIR UPDATE] Пересчитываем exec_price для Pair {order.pair_id}, найдено ордеров: {len(orders)}")
         
         for ord in orders:
             if ord.exec_price and ord.filled:
-                total_filled += ord.filled
-                exec_price_float = float(ord.exec_price)  # Конвертируем Decimal в float
-                total_cost += exec_price_float * ord.filled
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: exec_price={exec_price_float}, filled={ord.filled}, вклад в total_cost={exec_price_float * ord.filled}")
+                exec_price_float = float(ord.exec_price)
+                value = exec_price_float * ord.filled
+                
+                if ord.side == Side.SHORT:  # Продажа - получаем деньги
+                    short_value += value
+                    logger.info(f"[PAIR UPDATE]   Order {ord.id}: SHORT exec_price={exec_price_float}, filled={ord.filled}, value=+{value}")
+                else:  # LONG - Покупка - тратим деньги
+                    long_value += value
+                    logger.info(f"[PAIR UPDATE]   Order {ord.id}: LONG exec_price={exec_price_float}, filled={ord.filled}, value=-{value}")
             else:
                 logger.warning(f"[PAIR UPDATE]   Order {ord.id}: пропущен (exec_price={ord.exec_price}, filled={ord.filled})")
         
-        if total_filled > 0:
-            avg_exec_price = total_cost / total_filled
-            
-            # Обновляем Pair
-            pair = await session.get(Pair, order.pair_id)
-            if pair:
-                pair.exec_qty = total_filled
-                pair.exec_price = avg_exec_price
-                await session.commit()
-                logger.info(f"[PAIR UPDATE] Pair {pair.id}: ИТОГО exec_qty={total_filled}, exec_price={avg_exec_price:.6f} (total_cost={total_cost})")
+        # P&L = Продажи - Покупки
+        pnl = short_value - long_value
+        
+        # exec_qty - считаем количество завершенных SHORT ордеров (каждый = 1 сделка пары)
+        short_orders = [o for o in orders if o.side == Side.SHORT and o.filled > 0]
+        exec_qty = sum(o.filled for o in short_orders)
+        
+        # Обновляем Pair
+        pair = await session.get(Pair, order.pair_id)
+        if pair:
+            pair.exec_qty = exec_qty
+            pair.exec_price = pnl
+            await session.commit()
+            logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={exec_qty}, exec_price(P&L)={pnl:.2f} (SHORT={short_value:.2f}, LONG={long_value:.2f})")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """

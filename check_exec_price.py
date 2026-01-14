@@ -1,11 +1,13 @@
 """
-Скрипт для диагностики расхождений в exec_price.
+Скрипт для диагностики расхождений в exec_price (P&L).
 Проверяет расчеты для всех пар и ордеров.
+
+Формула: P&L = SUM(SHORT_price * SHORT_qty) - SUM(LONG_price * LONG_qty)
 """
 import asyncio
 from sqlalchemy import select
 from db.database import AsyncSessionLocal
-from db.models import Order, Pair
+from db.models import Order, Pair, Side
 
 async def check_exec_price():
     async with AsyncSessionLocal() as session:
@@ -20,7 +22,7 @@ async def check_exec_price():
         
         for pair in pairs:
             print(f"\n📊 Пара ID={pair.id}: {pair.asset_1}/{pair.asset_2}")
-            print(f"   БД: exec_price={pair.exec_price:.6f}, exec_qty={pair.exec_qty}")
+            print(f"   БД: exec_price(P&L)={float(pair.exec_price):.2f}, exec_qty={pair.exec_qty}")
             
             # Получаем все ордера этой пары
             stmt_orders = select(Order).where(
@@ -32,9 +34,9 @@ async def check_exec_price():
             
             print(f"   Ордеров в паре: {len(orders)}")
             
-            # Считаем вручную
-            total_filled = 0
-            total_cost = 0.0
+            # Считаем P&L вручную
+            short_value = 0.0
+            long_value = 0.0
             
             for i, ord in enumerate(orders, 1):
                 print(f"\n   Ордер #{i} (ID={ord.id}):")
@@ -42,28 +44,33 @@ async def check_exec_price():
                 print(f"      status={ord.status}, side={ord.side}")
                 
                 if ord.exec_price and ord.filled:
-                    total_filled += ord.filled
-                    # Конвертируем в float для избежания ошибок с Decimal
                     exec_price_float = float(ord.exec_price)
-                    total_cost += exec_price_float * ord.filled
-                    print(f"      ✓ Учтен: вклад={exec_price_float * ord.filled:.6f}")
+                    value = exec_price_float * ord.filled
+                    
+                    if ord.side == Side.SHORT:
+                        short_value += value
+                        print(f"      ✓ SHORT: +{value:.2f}")
+                    else:
+                        long_value += value
+                        print(f"      ✓ LONG:  -{value:.2f}")
                 else:
                     print(f"      ⚠️  НЕ учтен (exec_price или filled пустые!)")
             
-            if total_filled > 0:
-                manual_avg = total_cost / total_filled
-                diff = abs(manual_avg - float(pair.exec_price or 0))
+            if short_value > 0 or long_value > 0:
+                manual_pnl = short_value - long_value
+                db_pnl = float(pair.exec_price or 0)
+                diff = abs(manual_pnl - db_pnl)
                 
                 print(f"\n   {'─'*60}")
-                print(f"   📈 Расчет вручную:")
-                print(f"      total_filled = {total_filled}")
-                print(f"      total_cost   = {total_cost:.6f}")
-                print(f"      avg_price    = {manual_avg:.6f}")
-                print(f"\n   БД:             {pair.exec_price:.6f}")
-                print(f"   Расчет вручную: {manual_avg:.6f}")
-                print(f"   Разница:        {diff:.6f}")
+                print(f"   📈 Расчет P&L вручную:")
+                print(f"      SHORT (продажи) = +{short_value:.2f}")
+                print(f"      LONG  (покупки) = -{long_value:.2f}")
+                print(f"      P&L = {short_value:.2f} - {long_value:.2f} = {manual_pnl:.2f}")
+                print(f"\n   БД:             {db_pnl:.2f}")
+                print(f"   Расчет вручную: {manual_pnl:.2f}")
+                print(f"   Разница:        {diff:.2f}")
                 
-                if diff > 0.000001:  # Погрешность округления
+                if diff > 0.01:  # Погрешность округления
                     print(f"   ❌ РАСХОЖДЕНИЕ!")
                 else:
                     print(f"   ✅ Совпадает")
