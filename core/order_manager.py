@@ -351,10 +351,15 @@ class OrderManager:
         total_filled = 0
         total_cost = 0.0
         
+        logger.info(f"[PAIR UPDATE] Пересчитываем exec_price для Pair {order.pair_id}, найдено ордеров: {len(orders)}")
+        
         for ord in orders:
             if ord.exec_price and ord.filled:
                 total_filled += ord.filled
                 total_cost += ord.exec_price * ord.filled
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: exec_price={ord.exec_price}, filled={ord.filled}, вклад в total_cost={ord.exec_price * ord.filled}")
+            else:
+                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: пропущен (exec_price={ord.exec_price}, filled={ord.filled})")
         
         if total_filled > 0:
             avg_exec_price = total_cost / total_filled
@@ -365,7 +370,7 @@ class OrderManager:
                 pair.exec_qty = total_filled
                 pair.exec_price = avg_exec_price
                 await session.commit()
-                logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={total_filled}, exec_price={avg_exec_price:.4f}")
+                logger.info(f"[PAIR UPDATE] Pair {pair.id}: ИТОГО exec_qty={total_filled}, exec_price={avg_exec_price:.6f} (total_cost={total_cost})")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """
@@ -441,6 +446,8 @@ class OrderManager:
                     trade_qty = event.get("qty") or 0
                     trade_price = event.get("price") or 0.0
                     
+                    logger.info(f"[TRADE] Event для Order {order.id}: trade_price={trade_price}, trade_qty={trade_qty}, quik_num={event.get('order_num')}, trans_id={event.get('trans_id')}")
+                    
                     # Обновляем filled quantity
                     prev_filled = order.filled or 0
                     order.filled = prev_filled + trade_qty
@@ -452,10 +459,14 @@ class OrderManager:
                         if prev_filled == 0:
                             # Первая сделка
                             order.exec_price = float(trade_price)
+                            logger.info(f"[TRADE] Order {order.id}: Первая сделка, exec_price={order.exec_price}")
                         else:
                             # Взвешенное среднее: (prev_price * prev_qty + new_price * new_qty) / total_qty
                             total_cost = (prev_exec_price * prev_filled) + (trade_price * trade_qty)
                             order.exec_price = total_cost / order.filled
+                            logger.info(f"[TRADE] Order {order.id}: Расчет VWAP: ({prev_exec_price}*{prev_filled} + {trade_price}*{trade_qty}) / {order.filled} = {order.exec_price}")
+                    else:
+                        logger.warning(f"[TRADE] Order {order.id}: Пропущен расчет exec_price (trade_qty={trade_qty}, trade_price={trade_price})")
                     
                     # Обновляем статус
                     if order.filled >= order.qty:
