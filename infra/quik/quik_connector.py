@@ -487,8 +487,8 @@ class QuikConnector:
         payload["cmd"] = event.get("cmd")
         try:
             _c.order_manager().on_trade_event(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"[_on_trade] Ошибка при обработке OnTrade: {e}")
 
     def _on_order(self, event):
         from core.order_manager import OrderManager
@@ -498,8 +498,8 @@ class QuikConnector:
         payload["cmd"] = event.get("cmd")
         try:
             _c.order_manager().on_order_event(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"[_on_order] Ошибка при обработке OnOrder: {e}")
 
     def _on_trans_reply(self, event):
         from core.order_manager import OrderManager
@@ -509,8 +509,8 @@ class QuikConnector:
         payload["cmd"] = event.get("cmd")
         try:
             _c.order_manager().on_trans_reply_event(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"[_on_trans_reply] Ошибка при обработке OnTransReply: {e}")
 
     def _on_heartbeat(self, event):
         """Обработчик heartbeat от QUIK."""

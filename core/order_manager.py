@@ -356,8 +356,9 @@ class OrderManager:
         for ord in orders:
             if ord.exec_price and ord.filled:
                 total_filled += ord.filled
-                total_cost += ord.exec_price * ord.filled
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: exec_price={ord.exec_price}, filled={ord.filled}, вклад в total_cost={ord.exec_price * ord.filled}")
+                exec_price_float = float(ord.exec_price)  # Конвертируем Decimal в float
+                total_cost += exec_price_float * ord.filled
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: exec_price={exec_price_float}, filled={ord.filled}, вклад в total_cost={exec_price_float * ord.filled}")
             else:
                 logger.warning(f"[PAIR UPDATE]   Order {ord.id}: пропущен (exec_price={ord.exec_price}, filled={ord.filled})")
         
@@ -455,16 +456,17 @@ class OrderManager:
                     
                     # Рассчитываем weighted average execution price
                     if trade_qty > 0 and trade_price > 0:
-                        prev_exec_price = order.exec_price or 0.0
+                        prev_exec_price = float(order.exec_price) if order.exec_price else 0.0
+                        trade_price_float = float(trade_price)
                         if prev_filled == 0:
                             # Первая сделка
-                            order.exec_price = float(trade_price)
+                            order.exec_price = trade_price_float
                             logger.info(f"[TRADE] Order {order.id}: Первая сделка, exec_price={order.exec_price}")
                         else:
                             # Взвешенное среднее: (prev_price * prev_qty + new_price * new_qty) / total_qty
-                            total_cost = (prev_exec_price * prev_filled) + (trade_price * trade_qty)
+                            total_cost = (prev_exec_price * prev_filled) + (trade_price_float * trade_qty)
                             order.exec_price = total_cost / order.filled
-                            logger.info(f"[TRADE] Order {order.id}: Расчет VWAP: ({prev_exec_price}*{prev_filled} + {trade_price}*{trade_qty}) / {order.filled} = {order.exec_price}")
+                            logger.info(f"[TRADE] Order {order.id}: Расчет VWAP: ({prev_exec_price}*{prev_filled} + {trade_price_float}*{trade_qty}) / {order.filled} = {order.exec_price}")
                     else:
                         logger.warning(f"[TRADE] Order {order.id}: Пропущен расчет exec_price (trade_qty={trade_qty}, trade_price={trade_price})")
                     
