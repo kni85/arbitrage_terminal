@@ -5,21 +5,31 @@
 Формула: 
 exec_price = SUM(price_1 * qty_1 / qty_ratio_1) * price_ratio_1
            - SUM(price_2 * qty_2 / qty_ratio_2) * price_ratio_2
+
+Нога определяется через справочник assets_table: sec_code (ticker) -> code (alias)
 """
 import asyncio
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from db.database import AsyncSessionLocal
-from db.models import Order, Pair
+from db.models import Order, Pair, Asset
 
 async def check_exec_price():
     async with AsyncSessionLocal() as session:
+        # Загружаем справочник алиасов: sec_code -> code
+        stmt_assets = select(Asset).where(Asset.sec_code.isnot(None), Asset.code.isnot(None))
+        result_assets = await session.execute(stmt_assets)
+        assets = result_assets.scalars().all()
+        ticker_to_alias = {a.sec_code: a.code for a in assets}
+        
+        print(f"\n📚 Справочник алиасов: {ticker_to_alias}\n")
+        
         # Получаем все пары с exec_price
         stmt_pairs = select(Pair).where(Pair.exec_price.isnot(None))
         result = await session.execute(stmt_pairs)
         pairs = result.scalars().all()
         
-        print(f"\n{'='*80}")
+        print(f"{'='*80}")
         print(f"Найдено пар с exec_price: {len(pairs)}")
         print(f"{'='*80}\n")
         
@@ -50,23 +60,26 @@ async def check_exec_price():
             
             for i, ord in enumerate(orders, 1):
                 ticker = ord.instrument.ticker if ord.instrument else "?"
+                alias = ticker_to_alias.get(ticker, ticker)  # Fallback на ticker если нет в справочнике
+                
                 print(f"\n   Ордер #{i} (ID={ord.id}):")
-                print(f"      ticker={ticker}, filled={ord.filled}, exec_price={ord.exec_price}")
+                print(f"      ticker={ticker} -> alias={alias}")
+                print(f"      filled={ord.filled}, exec_price={ord.exec_price}")
                 print(f"      status={ord.status}, side={ord.side}")
                 
                 if ord.exec_price and ord.filled:
                     exec_price_float = float(ord.exec_price)
                     
-                    if ticker == pair.asset_1:
+                    if alias == pair.asset_1:
                         normalized = (exec_price_float * ord.filled) / qty_ratio_1
                         sum_1 += normalized
-                        print(f"      ✓ INSTR_1: ({exec_price_float}*{ord.filled})/{qty_ratio_1} = {normalized:.2f}")
-                    elif ticker == pair.asset_2:
+                        print(f"      ✓ LEG_1: ({exec_price_float}*{ord.filled})/{qty_ratio_1} = {normalized:.2f}")
+                    elif alias == pair.asset_2:
                         normalized = (exec_price_float * ord.filled) / qty_ratio_2
                         sum_2 += normalized
-                        print(f"      ✓ INSTR_2: ({exec_price_float}*{ord.filled})/{qty_ratio_2} = {normalized:.2f}")
+                        print(f"      ✓ LEG_2: ({exec_price_float}*{ord.filled})/{qty_ratio_2} = {normalized:.2f}")
                     else:
-                        print(f"      ⚠️  ticker не совпадает с asset_1/asset_2!")
+                        print(f"      ⚠️  alias={alias} не совпадает с asset_1={pair.asset_1} или asset_2={pair.asset_2}!")
                 else:
                     print(f"      ⚠️  НЕ учтен (exec_price или filled пустые!)")
             
@@ -77,8 +90,8 @@ async def check_exec_price():
                 
                 print(f"\n   {'─'*60}")
                 print(f"   📈 Расчет P&L вручную:")
-                print(f"      sum_1 (инстр.1) = {sum_1:.2f}")
-                print(f"      sum_2 (инстр.2) = {sum_2:.2f}")
+                print(f"      sum_1 (нога 1) = {sum_1:.2f}")
+                print(f"      sum_2 (нога 2) = {sum_2:.2f}")
                 print(f"      P&L = {sum_1:.2f}*{price_ratio_1} - {sum_2:.2f}*{price_ratio_2} = {manual_pnl:.2f}")
                 print(f"\n   БД:             {db_pnl:.2f}")
                 print(f"   Расчет вручную: {manual_pnl:.2f}")

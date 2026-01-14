@@ -332,13 +332,14 @@ class OrderManager:
         exec_price = SUM(price_1 * qty_1 / qty_ratio_1) * price_ratio_1
                    - SUM(price_2 * qty_2 / qty_ratio_2) * price_ratio_2
         
-        Где инструмент 1/2 определяется по ticker vs pair.asset_1/asset_2
+        Нога определяется через справочник assets_table: ticker -> alias (code)
         """
         if not order.pair_id:
             return  # Ордер не связан с парой
         
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+        from db.models import Asset
         
         # Получаем Pair с параметрами
         pair = await session.get(Pair, order.pair_id)
@@ -357,18 +358,37 @@ class OrderManager:
         if not orders:
             return
         
+        # Собираем все тикеры и загружаем их алиасы из assets_table
+        tickers = set()
+        for ord in orders:
+            if ord.instrument and ord.instrument.ticker:
+                tickers.add(ord.instrument.ticker)
+        
+        # Получаем маппинг sec_code -> code (алиас) из assets_table
+        ticker_to_alias = {}
+        if tickers:
+            stmt_assets = select(Asset).where(Asset.sec_code.in_(tickers))
+            result_assets = await session.execute(stmt_assets)
+            assets = result_assets.scalars().all()
+            for asset in assets:
+                if asset.sec_code and asset.code:
+                    ticker_to_alias[asset.sec_code] = asset.code
+        
+        logger.info(f"[PAIR UPDATE] ticker_to_alias: {ticker_to_alias}")
+        
         # Получаем коэффициенты из Pair (с дефолтами)
         qty_ratio_1 = float(pair.qty_ratio_1) if pair.qty_ratio_1 else 1.0
         qty_ratio_2 = float(pair.qty_ratio_2) if pair.qty_ratio_2 else 1.0
         price_ratio_1 = float(pair.price_ratio_1) if pair.price_ratio_1 else 1.0
         price_ratio_2 = float(pair.price_ratio_2) if pair.price_ratio_2 else 1.0
         
+        logger.info(f"[PAIR UPDATE] Pair {pair.id}: asset_1={pair.asset_1}, asset_2={pair.asset_2}")
         logger.info(f"[PAIR UPDATE] Pair {pair.id}: qty_ratio=({qty_ratio_1}, {qty_ratio_2}), price_ratio=({price_ratio_1}, {price_ratio_2})")
         
-        # Рассчитываем нормализованные суммы для каждого инструмента
+        # Рассчитываем нормализованные суммы для каждой ноги
         sum_1 = 0.0  # SUM(price_1 * qty_1 / qty_ratio_1)
         sum_2 = 0.0  # SUM(price_2 * qty_2 / qty_ratio_2)
-        exec_qty = 0  # Количество исполненных по инструменту 1
+        exec_qty = 0  # Количество исполненных по ноге 1
         
         logger.info(f"[PAIR UPDATE] Пересчитываем exec_price для Pair {order.pair_id}, найдено ордеров: {len(orders)}")
         
@@ -379,21 +399,22 @@ class OrderManager:
             
             exec_price_float = float(ord.exec_price)
             ticker = ord.instrument.ticker if ord.instrument else None
+            alias = ticker_to_alias.get(ticker)
             
-            # Определяем к какому инструменту относится ордер
-            if ticker == pair.asset_1:
-                # Инструмент 1: (price * qty) / qty_ratio_1
+            # Определяем ногу по алиасу
+            if alias == pair.asset_1:
+                # Нога 1: (price * qty) / qty_ratio_1
                 normalized = (exec_price_float * ord.filled) / qty_ratio_1
                 sum_1 += normalized
                 exec_qty += ord.filled
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: INSTR_1 ({ticker}) price={exec_price_float}, qty={ord.filled}, normalized={normalized:.2f}")
-            elif ticker == pair.asset_2:
-                # Инструмент 2: (price * qty) / qty_ratio_2
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: LEG_1 ({ticker}->{alias}) price={exec_price_float}, qty={ord.filled}, norm={normalized:.2f}")
+            elif alias == pair.asset_2:
+                # Нога 2: (price * qty) / qty_ratio_2
                 normalized = (exec_price_float * ord.filled) / qty_ratio_2
                 sum_2 += normalized
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: INSTR_2 ({ticker}) price={exec_price_float}, qty={ord.filled}, normalized={normalized:.2f}")
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: LEG_2 ({ticker}->{alias}) price={exec_price_float}, qty={ord.filled}, norm={normalized:.2f}")
             else:
-                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: ticker={ticker} не совпадает с asset_1={pair.asset_1} или asset_2={pair.asset_2}")
+                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: ticker={ticker}, alias={alias} не совпадает с asset_1={pair.asset_1} или asset_2={pair.asset_2}")
         
         # Итоговый P&L спреда
         pnl = sum_1 * price_ratio_1 - sum_2 * price_ratio_2
