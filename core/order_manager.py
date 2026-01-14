@@ -328,17 +328,25 @@ class OrderManager:
     async def _update_pair_exec_price(self, session, order: Order) -> None:
         """Обновляет exec_price и exec_qty в таблице Pair на основе реальных сделок по ордерам.
         
-        Расчет exec_price для арбитражной пары:
-        exec_price = SUM(SHORT_price * SHORT_qty) - SUM(LONG_price * LONG_qty)
-        Это P&L (profit/loss) арбитража.
+        Формула расчета exec_price (P&L спреда):
+        exec_price = SUM(price_1 * qty_1 / qty_ratio_1) * price_ratio_1
+                   - SUM(price_2 * qty_2 / qty_ratio_2) * price_ratio_2
+        
+        Где инструмент 1/2 определяется по ticker vs pair.asset_1/asset_2
         """
         if not order.pair_id:
             return  # Ордер не связан с парой
         
         from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
         
-        # Получаем все ордера этой пары с исполненными сделками
-        stmt = select(Order).where(
+        # Получаем Pair с параметрами
+        pair = await session.get(Pair, order.pair_id)
+        if not pair:
+            return
+        
+        # Получаем все ордера этой пары с исполненными сделками (с загрузкой instrument)
+        stmt = select(Order).options(selectinload(Order.instrument)).where(
             Order.pair_id == order.pair_id,
             Order.filled > 0,
             Order.exec_price.isnot(None)
@@ -349,40 +357,53 @@ class OrderManager:
         if not orders:
             return
         
-        # Рассчитываем P&L арбитража: SHORT - LONG
-        short_value = 0.0  # Сумма продаж (получаем деньги)
-        long_value = 0.0   # Сумма покупок (тратим деньги)
+        # Получаем коэффициенты из Pair (с дефолтами)
+        qty_ratio_1 = float(pair.qty_ratio_1) if pair.qty_ratio_1 else 1.0
+        qty_ratio_2 = float(pair.qty_ratio_2) if pair.qty_ratio_2 else 1.0
+        price_ratio_1 = float(pair.price_ratio_1) if pair.price_ratio_1 else 1.0
+        price_ratio_2 = float(pair.price_ratio_2) if pair.price_ratio_2 else 1.0
+        
+        logger.info(f"[PAIR UPDATE] Pair {pair.id}: qty_ratio=({qty_ratio_1}, {qty_ratio_2}), price_ratio=({price_ratio_1}, {price_ratio_2})")
+        
+        # Рассчитываем нормализованные суммы для каждого инструмента
+        sum_1 = 0.0  # SUM(price_1 * qty_1 / qty_ratio_1)
+        sum_2 = 0.0  # SUM(price_2 * qty_2 / qty_ratio_2)
+        exec_qty = 0  # Количество исполненных по инструменту 1
         
         logger.info(f"[PAIR UPDATE] Пересчитываем exec_price для Pair {order.pair_id}, найдено ордеров: {len(orders)}")
         
         for ord in orders:
-            if ord.exec_price and ord.filled:
-                exec_price_float = float(ord.exec_price)
-                value = exec_price_float * ord.filled
-                
-                if ord.side == Side.SHORT:  # Продажа - получаем деньги
-                    short_value += value
-                    logger.info(f"[PAIR UPDATE]   Order {ord.id}: SHORT exec_price={exec_price_float}, filled={ord.filled}, value=+{value}")
-                else:  # LONG - Покупка - тратим деньги
-                    long_value += value
-                    logger.info(f"[PAIR UPDATE]   Order {ord.id}: LONG exec_price={exec_price_float}, filled={ord.filled}, value=-{value}")
-            else:
+            if not ord.exec_price or not ord.filled:
                 logger.warning(f"[PAIR UPDATE]   Order {ord.id}: пропущен (exec_price={ord.exec_price}, filled={ord.filled})")
+                continue
+            
+            exec_price_float = float(ord.exec_price)
+            ticker = ord.instrument.ticker if ord.instrument else None
+            
+            # Определяем к какому инструменту относится ордер
+            if ticker == pair.asset_1:
+                # Инструмент 1: (price * qty) / qty_ratio_1
+                normalized = (exec_price_float * ord.filled) / qty_ratio_1
+                sum_1 += normalized
+                exec_qty += ord.filled
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: INSTR_1 ({ticker}) price={exec_price_float}, qty={ord.filled}, normalized={normalized:.2f}")
+            elif ticker == pair.asset_2:
+                # Инструмент 2: (price * qty) / qty_ratio_2
+                normalized = (exec_price_float * ord.filled) / qty_ratio_2
+                sum_2 += normalized
+                logger.info(f"[PAIR UPDATE]   Order {ord.id}: INSTR_2 ({ticker}) price={exec_price_float}, qty={ord.filled}, normalized={normalized:.2f}")
+            else:
+                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: ticker={ticker} не совпадает с asset_1={pair.asset_1} или asset_2={pair.asset_2}")
         
-        # P&L = Продажи - Покупки
-        pnl = short_value - long_value
-        
-        # exec_qty - считаем количество завершенных SHORT ордеров (каждый = 1 сделка пары)
-        short_orders = [o for o in orders if o.side == Side.SHORT and o.filled > 0]
-        exec_qty = sum(o.filled for o in short_orders)
+        # Итоговый P&L спреда
+        pnl = sum_1 * price_ratio_1 - sum_2 * price_ratio_2
         
         # Обновляем Pair
-        pair = await session.get(Pair, order.pair_id)
-        if pair:
-            pair.exec_qty = exec_qty
-            pair.exec_price = pnl
-            await session.commit()
-            logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={exec_qty}, exec_price(P&L)={pnl:.2f} (SHORT={short_value:.2f}, LONG={long_value:.2f})")
+        pair.exec_qty = exec_qty
+        pair.exec_price = pnl
+        await session.commit()
+        logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={exec_qty}, exec_price(P&L)={pnl:.2f}")
+        logger.info(f"[PAIR UPDATE]   Формула: {sum_1:.2f}*{price_ratio_1} - {sum_2:.2f}*{price_ratio_2} = {pnl:.2f}")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """

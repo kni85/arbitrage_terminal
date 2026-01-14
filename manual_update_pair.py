@@ -1,12 +1,15 @@
 """
-Вручную пересчитываем exec_price (P&L) для всех пар на основе реальных сделок
+Вручную пересчитываем exec_price (P&L спреда) для всех пар на основе реальных сделок
 
-Формула: P&L = SUM(SHORT_price * SHORT_qty) - SUM(LONG_price * LONG_qty)
+Формула: 
+exec_price = SUM(price_1 * qty_1 / qty_ratio_1) * price_ratio_1
+           - SUM(price_2 * qty_2 / qty_ratio_2) * price_ratio_2
 """
 import asyncio
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from db.database import AsyncSessionLocal
-from db.models import Order, Pair, Side
+from db.models import Order, Pair
 
 async def update_all_pairs():
     async with AsyncSessionLocal() as session:
@@ -18,8 +21,8 @@ async def update_all_pairs():
         print(f"Найдено пар: {len(pairs)}\n")
         
         for pair in pairs:
-            # Получаем ордера этой пары
-            stmt_orders = select(Order).where(
+            # Получаем ордера этой пары с инструментами
+            stmt_orders = select(Order).options(selectinload(Order.instrument)).where(
                 Order.pair_id == pair.id,
                 Order.filled > 0,
                 Order.exec_price.isnot(None)
@@ -31,33 +34,45 @@ async def update_all_pairs():
                 print(f"Пара ID={pair.id} ({pair.asset_1}/{pair.asset_2}): нет исполненных ордеров")
                 continue
             
-            # Считаем P&L: SHORT - LONG
-            short_value = 0.0
-            long_value = 0.0
+            # Коэффициенты
+            qty_ratio_1 = float(pair.qty_ratio_1) if pair.qty_ratio_1 else 1.0
+            qty_ratio_2 = float(pair.qty_ratio_2) if pair.qty_ratio_2 else 1.0
+            price_ratio_1 = float(pair.price_ratio_1) if pair.price_ratio_1 else 1.0
+            price_ratio_2 = float(pair.price_ratio_2) if pair.price_ratio_2 else 1.0
             
             print(f"Пара ID={pair.id} ({pair.asset_1}/{pair.asset_2}):")
+            print(f"  qty_ratio=({qty_ratio_1}, {qty_ratio_2}), price_ratio=({price_ratio_1}, {price_ratio_2})")
+            
+            # Считаем по формуле
+            sum_1 = 0.0
+            sum_2 = 0.0
+            exec_qty = 0
+            
             for ord in orders:
                 if ord.exec_price and ord.filled:
-                    value = float(ord.exec_price) * ord.filled
-                    if ord.side == Side.SHORT:
-                        short_value += value
-                        print(f"  Order {ord.id}: SHORT {ord.filled} @ {ord.exec_price} = +{value:.2f}")
+                    ticker = ord.instrument.ticker if ord.instrument else "?"
+                    exec_price_float = float(ord.exec_price)
+                    
+                    if ticker == pair.asset_1:
+                        normalized = (exec_price_float * ord.filled) / qty_ratio_1
+                        sum_1 += normalized
+                        exec_qty += ord.filled
+                        print(f"  Order {ord.id}: INSTR_1 ({ticker}) {ord.filled} @ {exec_price_float} / {qty_ratio_1} = {normalized:.2f}")
+                    elif ticker == pair.asset_2:
+                        normalized = (exec_price_float * ord.filled) / qty_ratio_2
+                        sum_2 += normalized
+                        print(f"  Order {ord.id}: INSTR_2 ({ticker}) {ord.filled} @ {exec_price_float} / {qty_ratio_2} = {normalized:.2f}")
                     else:
-                        long_value += value
-                        print(f"  Order {ord.id}: LONG  {ord.filled} @ {ord.exec_price} = -{value:.2f}")
+                        print(f"  Order {ord.id}: ⚠️ ticker={ticker} не совпадает!")
             
-            pnl = short_value - long_value
-            
-            # exec_qty = количество SHORT ордеров
-            short_orders = [o for o in orders if o.side == Side.SHORT and o.filled > 0]
-            exec_qty = sum(o.filled for o in short_orders)
+            pnl = sum_1 * price_ratio_1 - sum_2 * price_ratio_2
             
             # Обновляем
             pair.exec_qty = exec_qty
             pair.exec_price = pnl
             
-            print(f"  ✓ P&L = {short_value:.2f} - {long_value:.2f} = {pnl:.2f}")
-            print(f"  ✓ exec_qty={exec_qty}, exec_price(P&L)={pnl:.2f}\n")
+            print(f"  ✓ P&L = {sum_1:.2f}*{price_ratio_1} - {sum_2:.2f}*{price_ratio_2} = {pnl:.2f}")
+            print(f"  ✓ exec_qty={exec_qty}, exec_price={pnl:.2f}\n")
         
         await session.commit()
         print("Готово!")

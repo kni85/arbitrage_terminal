@@ -1,13 +1,16 @@
 """
-Скрипт для диагностики расхождений в exec_price (P&L).
+Скрипт для диагностики расхождений в exec_price (P&L спреда).
 Проверяет расчеты для всех пар и ордеров.
 
-Формула: P&L = SUM(SHORT_price * SHORT_qty) - SUM(LONG_price * LONG_qty)
+Формула: 
+exec_price = SUM(price_1 * qty_1 / qty_ratio_1) * price_ratio_1
+           - SUM(price_2 * qty_2 / qty_ratio_2) * price_ratio_2
 """
 import asyncio
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from db.database import AsyncSessionLocal
-from db.models import Order, Pair, Side
+from db.models import Order, Pair
 
 async def check_exec_price():
     async with AsyncSessionLocal() as session:
@@ -24,8 +27,15 @@ async def check_exec_price():
             print(f"\n📊 Пара ID={pair.id}: {pair.asset_1}/{pair.asset_2}")
             print(f"   БД: exec_price(P&L)={float(pair.exec_price):.2f}, exec_qty={pair.exec_qty}")
             
-            # Получаем все ордера этой пары
-            stmt_orders = select(Order).where(
+            # Коэффициенты
+            qty_ratio_1 = float(pair.qty_ratio_1) if pair.qty_ratio_1 else 1.0
+            qty_ratio_2 = float(pair.qty_ratio_2) if pair.qty_ratio_2 else 1.0
+            price_ratio_1 = float(pair.price_ratio_1) if pair.price_ratio_1 else 1.0
+            price_ratio_2 = float(pair.price_ratio_2) if pair.price_ratio_2 else 1.0
+            print(f"   Коэффициенты: qty_ratio=({qty_ratio_1}, {qty_ratio_2}), price_ratio=({price_ratio_1}, {price_ratio_2})")
+            
+            # Получаем все ордера этой пары с инструментами
+            stmt_orders = select(Order).options(selectinload(Order.instrument)).where(
                 Order.pair_id == pair.id,
                 Order.filled > 0
             )
@@ -34,43 +44,47 @@ async def check_exec_price():
             
             print(f"   Ордеров в паре: {len(orders)}")
             
-            # Считаем P&L вручную
-            short_value = 0.0
-            long_value = 0.0
+            # Считаем по формуле
+            sum_1 = 0.0
+            sum_2 = 0.0
             
             for i, ord in enumerate(orders, 1):
+                ticker = ord.instrument.ticker if ord.instrument else "?"
                 print(f"\n   Ордер #{i} (ID={ord.id}):")
-                print(f"      filled={ord.filled}, exec_price={ord.exec_price}")
+                print(f"      ticker={ticker}, filled={ord.filled}, exec_price={ord.exec_price}")
                 print(f"      status={ord.status}, side={ord.side}")
                 
                 if ord.exec_price and ord.filled:
                     exec_price_float = float(ord.exec_price)
-                    value = exec_price_float * ord.filled
                     
-                    if ord.side == Side.SHORT:
-                        short_value += value
-                        print(f"      ✓ SHORT: +{value:.2f}")
+                    if ticker == pair.asset_1:
+                        normalized = (exec_price_float * ord.filled) / qty_ratio_1
+                        sum_1 += normalized
+                        print(f"      ✓ INSTR_1: ({exec_price_float}*{ord.filled})/{qty_ratio_1} = {normalized:.2f}")
+                    elif ticker == pair.asset_2:
+                        normalized = (exec_price_float * ord.filled) / qty_ratio_2
+                        sum_2 += normalized
+                        print(f"      ✓ INSTR_2: ({exec_price_float}*{ord.filled})/{qty_ratio_2} = {normalized:.2f}")
                     else:
-                        long_value += value
-                        print(f"      ✓ LONG:  -{value:.2f}")
+                        print(f"      ⚠️  ticker не совпадает с asset_1/asset_2!")
                 else:
                     print(f"      ⚠️  НЕ учтен (exec_price или filled пустые!)")
             
-            if short_value > 0 or long_value > 0:
-                manual_pnl = short_value - long_value
+            if sum_1 > 0 or sum_2 > 0:
+                manual_pnl = sum_1 * price_ratio_1 - sum_2 * price_ratio_2
                 db_pnl = float(pair.exec_price or 0)
                 diff = abs(manual_pnl - db_pnl)
                 
                 print(f"\n   {'─'*60}")
                 print(f"   📈 Расчет P&L вручную:")
-                print(f"      SHORT (продажи) = +{short_value:.2f}")
-                print(f"      LONG  (покупки) = -{long_value:.2f}")
-                print(f"      P&L = {short_value:.2f} - {long_value:.2f} = {manual_pnl:.2f}")
+                print(f"      sum_1 (инстр.1) = {sum_1:.2f}")
+                print(f"      sum_2 (инстр.2) = {sum_2:.2f}")
+                print(f"      P&L = {sum_1:.2f}*{price_ratio_1} - {sum_2:.2f}*{price_ratio_2} = {manual_pnl:.2f}")
                 print(f"\n   БД:             {db_pnl:.2f}")
                 print(f"   Расчет вручную: {manual_pnl:.2f}")
                 print(f"   Разница:        {diff:.2f}")
                 
-                if diff > 0.01:  # Погрешность округления
+                if diff > 0.01:
                     print(f"   ❌ РАСХОЖДЕНИЕ!")
                 else:
                     print(f"   ✅ Совпадает")
