@@ -174,11 +174,15 @@ const handleWsOrderMessage = (ev) => {
         if(!row) return;
         row._inFlight=false;
         if(ok){
-            // exec_price и exec_qty будут обновлены автоматически через WebSocket
-            // когда придут реальные сделки из QUIK (OnTrade events)
-            // Поэтому здесь мы НЕ рассчитываем exec_price на основе hit_price
+            // ВРЕМЕННО увеличиваем exec_qty чтобы leaves_qty уменьшился
+            // Реальное значение придет из БД при следующей синхронизации
+            const execQtyCell = cellById(row,'exec_qty');
+            const currentExecQty = parseInt(execQtyCell.textContent) || 0;
+            execQtyCell.textContent = (currentExecQty + 1).toString();
             
-            // Просто пересчитываем leaves_qty на основе текущих значений
+            // exec_price будет обновлен автоматически из БД на основе реальных сделок
+            
+            // Пересчитываем leaves_qty
             updateLeaves(row);
             
             // auto-stop

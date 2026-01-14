@@ -43,8 +43,10 @@ async def check_exec_price():
                 
                 if ord.exec_price and ord.filled:
                     total_filled += ord.filled
-                    total_cost += ord.exec_price * ord.filled
-                    print(f"      ✓ Учтен: вклад={ord.exec_price * ord.filled:.6f}")
+                    # Конвертируем в float для избежания ошибок с Decimal
+                    exec_price_float = float(ord.exec_price)
+                    total_cost += exec_price_float * ord.filled
+                    print(f"      ✓ Учтен: вклад={exec_price_float * ord.filled:.6f}")
                 else:
                     print(f"      ⚠️  НЕ учтен (exec_price или filled пустые!)")
             

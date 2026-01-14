@@ -88,6 +88,9 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
     try:
         from db.models import Order, OrderStatus, Side, Instrument, PortfolioConfig
         from sqlalchemy import select
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         # Безопасно получаем обязательные поля
         class_code_1 = data.get("class_code_1")
@@ -97,6 +100,8 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
         side_1 = data.get("side_1")
         side_2 = data.get("side_2")
         pair_id = data.get("pair_id")  # Database ID of the trading pair
+        
+        logger.info(f"[SEND_PAIR_ORDER] Получен запрос: pair_id={pair_id}, {sec_code_1}/{sec_code_2}")
         
         # Проверяем обязательные поля
         if not all([class_code_1, sec_code_1, class_code_2, sec_code_2, side_1, side_2]):
@@ -186,6 +191,8 @@ async def send_pair_order(data: Dict[str, Any], broker: Broker | None = None) ->
             sess.add(order_rec_1)
             sess.add(order_rec_2)
             await sess.commit()
+            
+            logger.info(f"[SEND_PAIR_ORDER] Созданы Order ID={order_rec_1.id} и ID={order_rec_2.id} с pair_id={pair_id}")
             
             # Регистрируем маппинг в OrderManager
             om = container.order_manager()
