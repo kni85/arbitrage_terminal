@@ -374,27 +374,19 @@ class OrderManager:
                 if asset.sec_code and asset.code:
                     ticker_to_alias[asset.sec_code] = asset.code
         
-        logger.info(f"[PAIR UPDATE] ticker_to_alias: {ticker_to_alias}")
-        
         # Получаем коэффициенты из Pair (с дефолтами)
         qty_ratio_1 = float(pair.qty_ratio_1) if pair.qty_ratio_1 else 1.0
         qty_ratio_2 = float(pair.qty_ratio_2) if pair.qty_ratio_2 else 1.0
         price_ratio_1 = float(pair.price_ratio_1) if pair.price_ratio_1 else 1.0
         price_ratio_2 = float(pair.price_ratio_2) if pair.price_ratio_2 else 1.0
         
-        logger.info(f"[PAIR UPDATE] Pair {pair.id}: asset_1={pair.asset_1}, asset_2={pair.asset_2}")
-        logger.info(f"[PAIR UPDATE] Pair {pair.id}: qty_ratio=({qty_ratio_1}, {qty_ratio_2}), price_ratio=({price_ratio_1}, {price_ratio_2})")
-        
         # Рассчитываем нормализованные суммы для каждой ноги
         sum_1 = 0.0  # SUM(price_1 * qty_1 / qty_ratio_1)
         sum_2 = 0.0  # SUM(price_2 * qty_2 / qty_ratio_2)
         exec_qty = 0  # Количество исполненных по ноге 1
         
-        logger.info(f"[PAIR UPDATE] Пересчитываем exec_price для Pair {order.pair_id}, найдено ордеров: {len(orders)}")
-        
         for ord in orders:
             if not ord.exec_price or not ord.filled:
-                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: пропущен (exec_price={ord.exec_price}, filled={ord.filled})")
                 continue
             
             exec_price_float = float(ord.exec_price)
@@ -403,18 +395,14 @@ class OrderManager:
             
             # Определяем ногу по алиасу
             if alias == pair.asset_1:
-                # Нога 1: (price * qty) / qty_ratio_1
                 normalized = (exec_price_float * ord.filled) / qty_ratio_1
                 sum_1 += normalized
                 exec_qty += ord.filled
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: LEG_1 ({ticker}->{alias}) price={exec_price_float}, qty={ord.filled}, norm={normalized:.2f}")
             elif alias == pair.asset_2:
-                # Нога 2: (price * qty) / qty_ratio_2
                 normalized = (exec_price_float * ord.filled) / qty_ratio_2
                 sum_2 += normalized
-                logger.info(f"[PAIR UPDATE]   Order {ord.id}: LEG_2 ({ticker}->{alias}) price={exec_price_float}, qty={ord.filled}, norm={normalized:.2f}")
             else:
-                logger.warning(f"[PAIR UPDATE]   Order {ord.id}: ticker={ticker}, alias={alias} не совпадает с asset_1={pair.asset_1} или asset_2={pair.asset_2}")
+                logger.warning(f"[PAIR] Order {ord.id}: alias={alias} не совпадает с парой {pair.asset_1}/{pair.asset_2}")
         
         # Итоговый P&L спреда
         pnl = sum_1 * price_ratio_1 - sum_2 * price_ratio_2
@@ -423,8 +411,7 @@ class OrderManager:
         pair.exec_qty = exec_qty
         pair.exec_price = pnl
         await session.commit()
-        logger.info(f"[PAIR UPDATE] Pair {pair.id}: exec_qty={exec_qty}, exec_price(P&L)={pnl:.2f}")
-        logger.info(f"[PAIR UPDATE]   Формула: {sum_1:.2f}*{price_ratio_1} - {sum_2:.2f}*{price_ratio_2} = {pnl:.2f}")
+        logger.info(f"[PAIR] Pair {pair.id}: exec_price={pnl:.2f}, exec_qty={exec_qty}")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """
@@ -482,14 +469,8 @@ class OrderManager:
         """
         Обрабатывает событие сделки: обновляет filled qty и рассчитывает exec_price по реальным сделкам.
         """
-        print(f"!!! on_trade_event вызван: {event}")
-        
         quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
         trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
-        
-        print(f"!!! quik_num={quik_num}, trans_id={trans_id}")
-        print(f"!!! _quik_to_orm={self._quik_to_orm}")
-        print(f"!!! _trans_to_orm={self._trans_to_orm}")
         
         orm_order_id = None
         if quik_num is not None and quik_num in self._quik_to_orm:
@@ -497,64 +478,50 @@ class OrderManager:
         elif trans_id is not None and trans_id in self._trans_to_orm:
             orm_order_id = self._trans_to_orm[trans_id]
         
-        print(f"!!! orm_order_id={orm_order_id}")
-        
         if orm_order_id is None:
-            print(f"!!! ВНИМАНИЕ: Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
+        
         async def update():
-            print(f"!!! update() начало для orm_order_id={orm_order_id}")
             try:
                 async with AsyncSessionLocal() as session:
                     order = await session.get(Order, orm_order_id)
-                    print(f"!!! order={order}")
                     if order:
                         # Получаем данные сделки
                         trade_qty = event.get("qty") or 0
                         trade_price = event.get("price") or 0.0
                         
-                        print(f"!!! trade_qty={trade_qty}, trade_price={trade_price}, prev_filled={order.filled}")
-                        logger.info(f"[TRADE] Event для Order {order.id}: trade_price={trade_price}, trade_qty={trade_qty}, quik_num={event.get('order_num')}, trans_id={event.get('trans_id')}")
-                    
-                    # Обновляем filled quantity
-                    prev_filled = order.filled or 0
-                    order.filled = prev_filled + trade_qty
-                    order.leaves_qty = max(order.qty - order.filled, 0)
-                    
-                    # Рассчитываем weighted average execution price
-                    if trade_qty > 0 and trade_price > 0:
-                        prev_exec_price = float(order.exec_price) if order.exec_price else 0.0
-                        trade_price_float = float(trade_price)
-                        if prev_filled == 0:
-                            # Первая сделка
-                            order.exec_price = trade_price_float
-                            logger.info(f"[TRADE] Order {order.id}: Первая сделка, exec_price={order.exec_price}")
+                        logger.info(f"[TRADE] Order {order.id}: qty={trade_qty}, price={trade_price}")
+                        
+                        # Обновляем filled quantity
+                        prev_filled = order.filled or 0
+                        order.filled = prev_filled + trade_qty
+                        order.leaves_qty = max(order.qty - order.filled, 0)
+                        
+                        # Рассчитываем weighted average execution price
+                        if trade_qty > 0 and trade_price > 0:
+                            prev_exec_price = float(order.exec_price) if order.exec_price else 0.0
+                            trade_price_float = float(trade_price)
+                            if prev_filled == 0:
+                                order.exec_price = trade_price_float
+                            else:
+                                total_cost = (prev_exec_price * prev_filled) + (trade_price_float * trade_qty)
+                                order.exec_price = total_cost / order.filled
+                        
+                        # Обновляем статус
+                        if order.filled >= order.qty:
+                            order.status = OrderStatus.FILLED
                         else:
-                            # Взвешенное среднее: (prev_price * prev_qty + new_price * new_qty) / total_qty
-                            total_cost = (prev_exec_price * prev_filled) + (trade_price_float * trade_qty)
-                            order.exec_price = total_cost / order.filled
-                            logger.info(f"[TRADE] Order {order.id}: Расчет VWAP: ({prev_exec_price}*{prev_filled} + {trade_price_float}*{trade_qty}) / {order.filled} = {order.exec_price}")
-                    else:
-                        logger.warning(f"[TRADE] Order {order.id}: Пропущен расчет exec_price (trade_qty={trade_qty}, trade_price={trade_price})")
-                    
-                    # Обновляем статус
-                    if order.filled >= order.qty:
-                        order.status = OrderStatus.FILLED
-                    else:
-                        order.status = OrderStatus.PARTIAL
-                    
-                    await session.commit()
-                    print(f"!!! Order {order.id} обновлён: filled={order.filled}, exec_price={order.exec_price}")
-                    logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, exec_price={order.exec_price}, leaves_qty={order.leaves_qty}, status={order.status}")
-                    
-                    # Обновляем Pair.exec_price если ордер связан с парой
-                    await self._update_pair_exec_price(session, order)
-                    print(f"!!! _update_pair_exec_price завершён для Order {order.id}")
+                            order.status = OrderStatus.PARTIAL
+                        
+                        await session.commit()
+                        logger.info(f"[TRADE] Order {order.id}: filled={order.filled}, exec_price={order.exec_price}, status={order.status}")
+                        
+                        # Обновляем Pair.exec_price если ордер связан с парой
+                        await self._update_pair_exec_price(session, order)
             except Exception as e:
-                print(f"!!! ОШИБКА в update(): {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.exception(f"[TRADE] Ошибка обработки сделки для Order {orm_order_id}: {e}")
+        
         self._schedule(update())
 
     def on_trans_reply_event(self, event: dict):
