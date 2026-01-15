@@ -482,24 +482,38 @@ class OrderManager:
         """
         Обрабатывает событие сделки: обновляет filled qty и рассчитывает exec_price по реальным сделкам.
         """
+        print(f"!!! on_trade_event вызван: {event}")
+        
         quik_num = self._to_int(event.get("order_num") or event.get("order_id"))
         trans_id = self._to_int(event.get("trans_id") or event.get("TRANS_ID"))
+        
+        print(f"!!! quik_num={quik_num}, trans_id={trans_id}")
+        print(f"!!! _quik_to_orm={self._quik_to_orm}")
+        print(f"!!! _trans_to_orm={self._trans_to_orm}")
+        
         orm_order_id = None
         if quik_num is not None and quik_num in self._quik_to_orm:
             orm_order_id = self._quik_to_orm[quik_num]
         elif trans_id is not None and trans_id in self._trans_to_orm:
             orm_order_id = self._trans_to_orm[trans_id]
+        
+        print(f"!!! orm_order_id={orm_order_id}")
+        
         if orm_order_id is None:
+            print(f"!!! ВНИМАНИЕ: Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             logger.warning(f"[TRADE] Не найден ORM Order для QUIK ID {quik_num} или TRANS_ID {trans_id}")
             return
         async def update():
+            print(f"!!! update() начало для orm_order_id={orm_order_id}")
             async with AsyncSessionLocal() as session:
                 order = await session.get(Order, orm_order_id)
+                print(f"!!! order={order}")
                 if order:
                     # Получаем данные сделки
                     trade_qty = event.get("qty") or 0
                     trade_price = event.get("price") or 0.0
                     
+                    print(f"!!! trade_qty={trade_qty}, trade_price={trade_price}, prev_filled={order.filled}")
                     logger.info(f"[TRADE] Event для Order {order.id}: trade_price={trade_price}, trade_qty={trade_qty}, quik_num={event.get('order_num')}, trans_id={event.get('trans_id')}")
                     
                     # Обновляем filled quantity

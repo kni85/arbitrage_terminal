@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import logging
 
+# Приглушаем шум от HTTP запросов (PATCH, GET и т.д.)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
