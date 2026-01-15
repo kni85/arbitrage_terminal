@@ -167,6 +167,23 @@ const handleWsOrderMessage = (ev) => {
         document.getElementById('ord_result').textContent = JSON.stringify(msg,null,2);
         return;
     }
+    // Обновление exec_price из бэкенда (real-time)
+    if(msg.type==='pair_update'){
+        const pairId = msg.pair_id;
+        const execPrice = msg.exec_price;
+        const execQty = msg.exec_qty;
+        // Находим строку с этим pair_id
+        for(let row of pairsTbody.rows){
+            if(row.dataset.id == pairId){
+                cellById(row,'exec_price').textContent = execPrice != null ? execPrice.toFixed(2) : '';
+                cellById(row,'exec_qty').textContent = execQty != null ? execQty.toString() : '';
+                updateLeaves(row);
+                console.log(`[WS] Pair ${pairId} updated: exec_price=${execPrice}, exec_qty=${execQty}`);
+                break;
+            }
+        }
+        return;
+    }
     if(msg.type==='pair_order_reply'){
         const rowIdx = msg.row_id;
         const ok = msg.ok;

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -15,9 +15,36 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+class ConnectionManager:
+    """Менеджер WebSocket соединений для broadcast сообщений."""
+    
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    def connect(self, websocket: WebSocket):
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: Dict[str, Any]):
+        """Отправляет сообщение всем подключенным клиентам."""
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass  # Игнорируем ошибки отправки
+
+
+# Глобальный менеджер соединений
+ws_manager = ConnectionManager()
+
+
 @router.websocket("/ws")
 async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
     await ws.accept()
+    ws_manager.connect(ws)  # Регистрируем соединение
     current_sub: Optional[Tuple[str, str]] = None  # (class, sec)
     loop = asyncio.get_running_loop()
     # Брокер-коннектор используется внутри core.ws_actions
@@ -123,6 +150,7 @@ async def ws_quotes(ws: WebSocket) -> None:  # noqa: D401
         except Exception:
             pass  # Если даже отправка ошибки не удается, просто игнорируем
     finally:
+        ws_manager.disconnect(ws)  # Отключаем соединение
         if current_sub:
             actions.stop_quotes(*current_sub, quote_callback, broker=broker)
         # Отписываемся от heartbeat

@@ -412,6 +412,18 @@ class OrderManager:
         pair.exec_price = pnl
         await session.commit()
         print(f"[PAIR] Pair {pair.id}: exec_price={pnl:.2f}, exec_qty={exec_qty}")
+        
+        # Отправляем обновление через WebSocket всем клиентам
+        try:
+            from backend.api.ws import ws_manager
+            await ws_manager.broadcast({
+                "type": "pair_update",
+                "pair_id": pair.id,
+                "exec_price": float(pnl),
+                "exec_qty": exec_qty
+            })
+        except Exception as e:
+            print(f"[PAIR] Ошибка broadcast: {e}")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """
