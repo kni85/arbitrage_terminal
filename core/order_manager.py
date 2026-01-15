@@ -411,7 +411,7 @@ class OrderManager:
         pair.exec_qty = exec_qty
         pair.exec_price = pnl
         await session.commit()
-        logger.info(f"[PAIR] Pair {pair.id}: exec_price={pnl:.2f}, exec_qty={exec_qty}")
+        print(f"[PAIR] Pair {pair.id}: exec_price={pnl:.2f}, exec_qty={exec_qty}")
 
     def _find_orm_order_id(self, event: dict) -> Optional[int]:
         """
@@ -491,8 +491,6 @@ class OrderManager:
                         trade_qty = event.get("qty") or 0
                         trade_price = event.get("price") or 0.0
                         
-                        logger.info(f"[TRADE] Order {order.id}: qty={trade_qty}, price={trade_price}")
-                        
                         # Обновляем filled quantity
                         prev_filled = order.filled or 0
                         order.filled = prev_filled + trade_qty
@@ -515,12 +513,12 @@ class OrderManager:
                             order.status = OrderStatus.PARTIAL
                         
                         await session.commit()
-                        logger.info(f"[TRADE] Order {order.id}: filled={order.filled}, exec_price={order.exec_price}, status={order.status}")
+                        print(f"[TRADE] Order {order.id}: +{trade_qty}@{trade_price} -> filled={order.filled}, exec_price={order.exec_price:.2f}")
                         
                         # Обновляем Pair.exec_price если ордер связан с парой
                         await self._update_pair_exec_price(session, order)
             except Exception as e:
-                logger.exception(f"[TRADE] Ошибка обработки сделки для Order {orm_order_id}: {e}")
+                print(f"[TRADE] ОШИБКА Order {orm_order_id}: {e}")
         
         self._schedule(update())
 
