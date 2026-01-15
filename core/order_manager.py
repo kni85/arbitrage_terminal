@@ -505,16 +505,17 @@ class OrderManager:
             return
         async def update():
             print(f"!!! update() начало для orm_order_id={orm_order_id}")
-            async with AsyncSessionLocal() as session:
-                order = await session.get(Order, orm_order_id)
-                print(f"!!! order={order}")
-                if order:
-                    # Получаем данные сделки
-                    trade_qty = event.get("qty") or 0
-                    trade_price = event.get("price") or 0.0
-                    
-                    print(f"!!! trade_qty={trade_qty}, trade_price={trade_price}, prev_filled={order.filled}")
-                    logger.info(f"[TRADE] Event для Order {order.id}: trade_price={trade_price}, trade_qty={trade_qty}, quik_num={event.get('order_num')}, trans_id={event.get('trans_id')}")
+            try:
+                async with AsyncSessionLocal() as session:
+                    order = await session.get(Order, orm_order_id)
+                    print(f"!!! order={order}")
+                    if order:
+                        # Получаем данные сделки
+                        trade_qty = event.get("qty") or 0
+                        trade_price = event.get("price") or 0.0
+                        
+                        print(f"!!! trade_qty={trade_qty}, trade_price={trade_price}, prev_filled={order.filled}")
+                        logger.info(f"[TRADE] Event для Order {order.id}: trade_price={trade_price}, trade_qty={trade_qty}, quik_num={event.get('order_num')}, trans_id={event.get('trans_id')}")
                     
                     # Обновляем filled quantity
                     prev_filled = order.filled or 0
@@ -544,10 +545,16 @@ class OrderManager:
                         order.status = OrderStatus.PARTIAL
                     
                     await session.commit()
+                    print(f"!!! Order {order.id} обновлён: filled={order.filled}, exec_price={order.exec_price}")
                     logger.info(f"[TRADE] Order {order.id} обновлён: filled={order.filled}, exec_price={order.exec_price}, leaves_qty={order.leaves_qty}, status={order.status}")
                     
                     # Обновляем Pair.exec_price если ордер связан с парой
                     await self._update_pair_exec_price(session, order)
+                    print(f"!!! _update_pair_exec_price завершён для Order {order.id}")
+            except Exception as e:
+                print(f"!!! ОШИБКА в update(): {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
         self._schedule(update())
 
     def on_trans_reply_event(self, event: dict):
